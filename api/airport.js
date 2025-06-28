@@ -1,8 +1,7 @@
 export default async function handler(req, res) {
   const { code } = req.query;
-  // const API_KEY = process.env.AIRPORTDB_API_KEY;
-  const API_KEY = "d2dbc2bbb32abef3572be1cdb7112ce85eb5dc969b4ac62ba5c4586fe7e6036a231295d7a64a5ad247885616a983b086";
-
+  const API_KEY = process.env.AIRPORTDB_API_KEY;
+  
   // Validate ICAO code (must be 4 uppercase letters)
   if (!code || !/^[A-Z]{4}$/.test(code.toUpperCase())) {
     res.status(200).send('Error: Please provide a valid 4-letter ICAO airport code, e.g. EGLL, KJFK, RJTT');
