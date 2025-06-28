@@ -1,6 +1,7 @@
 export default async function handler(req, res) {
   const { code } = req.query;
-  const API_KEY = process.env.AIRPORTDB_API_KEY;
+  // const API_KEY = process.env.AIRPORTDB_API_KEY;
+  const API_KEY = "d2dbc2bbb32abef3572be1cdb7112ce85eb5dc969b4ac62ba5c4586fe7e6036a231295d7a64a5ad247885616a983b086";
 
   // Validate ICAO code (must be 4 uppercase letters)
   if (!code || !/^[A-Z]{4}$/.test(code.toUpperCase())) {
