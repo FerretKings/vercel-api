@@ -21,8 +21,8 @@ export default async function handler(req, res) {
 
   try {
     const searchReg = reg.toUpperCase();
-    // FIX: Use correct endpoint path (aircrafts/registration)
-    const url = `https://${API_HOST}/aircrafts/registration/${encodeURIComponent(searchReg)}`;
+    // Correct endpoint based on API docs
+    const url = `https://${API_HOST}/aircrafts/${encodeURIComponent(searchReg)}`;
 
     console.log("url:", url);
 
