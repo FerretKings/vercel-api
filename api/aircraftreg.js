@@ -3,6 +3,11 @@ export default async function handler(req, res) {
   const API_KEY = process.env.AERODATABOX_API_KEY;
   const API_HOST = process.env.AERODATABOX_API_HOST || "aerodatabox.p.rapidapi.com";
 
+  // Debug logging for Vercel
+  console.log("reg:", reg);
+  console.log("API_HOST:", API_HOST);
+  console.log("API_KEY exists:", !!API_KEY);
+
   // Validate registration (should be at least 3 characters, alphanumeric or dash)
   if (!reg || !/^[A-Z0-9\-]{3,}$/.test(reg.toUpperCase())) {
     res.status(200).send('Error: Please provide a valid aircraft registration, e.g. N12345, G-ABCD, D-ABCD.');
@@ -18,6 +23,8 @@ export default async function handler(req, res) {
     const searchReg = reg.toUpperCase();
     const url = `https://${API_HOST}/aircraft/registration/${encodeURIComponent(searchReg)}`;
 
+    console.log("url:", url);
+
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -26,12 +33,19 @@ export default async function handler(req, res) {
       },
     });
 
+    console.log("response status:", response.status);
+    console.log("response ok:", response.ok);
+
+    // Log the full API response for debugging
+    const responseText = await response.text();
+    console.log("API response:", responseText);
+
     if (!response.ok) {
       res.status(200).send('Aircraft not found.');
       return;
     }
 
-    const data = await response.json();
+    const data = JSON.parse(responseText);
 
     // Defensive: If no registration is found in response
     if (!data || !data.registration) {
