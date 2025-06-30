@@ -1,6 +1,0 @@
-[
-  {
-    "path": "/api/process-shoutout-queue",
-    "schedule": "*/2 * * * *"
-  }
-]
