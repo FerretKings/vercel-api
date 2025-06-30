@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/process-shoutout-queue",
-      "schedule": "*/2 * * * *"
+      "schedule": "*/15 * * * *"
     }
   ]
 }
