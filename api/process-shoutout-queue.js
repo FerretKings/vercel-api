@@ -8,7 +8,7 @@ const MODERATOR_USER_ID = process.env.MODERATOR_USER_ID;
 const INITIAL_OAUTH_TOKEN = process.env.TWITCH_OAUTH_TOKEN;
 const REFRESH_TOKEN = process.env.TWITCH_REFRESH_TOKEN;
 
-const GLOBAL_COOLDOWN = 2 * 60 * 1000;
+const GLOBAL_COOLDOWN = 2 * 60 * 1000 + 15 * 1000; // 2 min 15 sec
 const USER_COOLDOWN = 60 * 60 * 1000;
 const SHOUTOUT_QUEUE_KEY = 'shoutout_queue';
 
