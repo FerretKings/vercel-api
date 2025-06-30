@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { kv } from '@vercel/kv';
 
 const CLIENT_ID = process.env.TWITCH_CLIENT_ID;
