@@ -1,22 +1,81 @@
 import { kv } from '@vercel/kv';
 
 const CLIENT_ID = process.env.TWITCH_CLIENT_ID;
-const OAUTH_TOKEN = process.env.TWITCH_OAUTH_TOKEN;
+const CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET;
 const BROADCASTER_USER_ID = process.env.BROADCASTER_USER_ID;
 const MODERATOR_USER_ID = process.env.MODERATOR_USER_ID;
+
+// These should be initially set in your Vercel env vars
+const INITIAL_OAUTH_TOKEN = process.env.TWITCH_OAUTH_TOKEN;
+const REFRESH_TOKEN = process.env.TWITCH_REFRESH_TOKEN;
 
 const GLOBAL_COOLDOWN = 2 * 60 * 1000; // 2 minutes in ms
 const USER_COOLDOWN = 60 * 60 * 1000;  // 60 minutes in ms
 
+// Get the latest OAuth token from KV, fallback to env var if not set yet
+async function getOAuthToken() {
+  const kvToken = await kv.get('twitch_access_token');
+  return kvToken || INITIAL_OAUTH_TOKEN;
+}
+
+// Store the new token in KV
+async function setOAuthToken(token) {
+  await kv.set('twitch_access_token', token);
+}
+
+// Refresh the OAuth token using refresh token
+async function refreshOAuthToken() {
+  const url = 'https://id.twitch.tv/oauth2/token';
+  const params = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: REFRESH_TOKEN,
+    client_id: CLIENT_ID,
+    client_secret: CLIENT_SECRET,
+  });
+  const res = await fetch(url, {
+    method: 'POST',
+    body: params,
+  });
+  if (!res.ok) {
+    console.error('Failed to refresh Twitch OAuth token', res.status, await res.text());
+    throw new Error('Could not refresh Twitch OAuth token');
+  }
+  const data = await res.json();
+  await setOAuthToken(data.access_token);
+  if (data.refresh_token) {
+    // Optionally update the refresh token if Twitch rotated it
+    await kv.set('twitch_refresh_token', data.refresh_token);
+  }
+  return data.access_token;
+}
+
+// Helper to make Twitch API calls with token refresh on 401
+async function twitchApiFetch(url, options = {}, attempt = 0) {
+  const MAX_ATTEMPTS = 2;
+  let token = await getOAuthToken();
+  const headers = {
+    ...options.headers,
+    'Client-ID': CLIENT_ID,
+    'Authorization': `Bearer ${token}`,
+  };
+  let res = await fetch(url, { ...options, headers });
+  if (res.status === 401 && attempt < MAX_ATTEMPTS) {
+    // Try refreshing the token and retrying
+    token = await refreshOAuthToken();
+    const retryHeaders = {
+      ...options.headers,
+      'Client-ID': CLIENT_ID,
+      'Authorization': `Bearer ${token}`,
+    };
+    res = await fetch(url, { ...options, headers: retryHeaders });
+  }
+  return res;
+}
+
 // Check if the broadcaster is live on Twitch
 async function isChannelLive(userId) {
   const url = `https://api.twitch.tv/helix/streams?user_id=${userId}`;
-  const res = await fetch(url, {
-    headers: {
-      'Client-ID': CLIENT_ID,
-      'Authorization': `Bearer ${OAUTH_TOKEN}`,
-    }
-  });
+  const res = await twitchApiFetch(url);
   const data = await res.json();
   return data.data && data.data.length > 0;
 }
@@ -24,12 +83,7 @@ async function isChannelLive(userId) {
 // Fetch Twitch user info
 async function getTwitchUser(login) {
   const url = `https://api.twitch.tv/helix/users?login=${encodeURIComponent(login)}`;
-  const res = await fetch(url, {
-    headers: {
-      'Client-ID': CLIENT_ID,
-      'Authorization': `Bearer ${OAUTH_TOKEN}`,
-    }
-  });
+  const res = await twitchApiFetch(url);
   const data = await res.json();
   // Debug: log both the response status and the JSON body
   console.log("Twitch API user lookup for login:", login);
@@ -41,11 +95,9 @@ async function getTwitchUser(login) {
 // Send a shoutout via Twitch API
 async function sendShoutout(toBroadcasterId) {
   const url = 'https://api.twitch.tv/helix/chat/shoutouts';
-  const res = await fetch(url, {
+  const res = await twitchApiFetch(url, {
     method: 'POST',
     headers: {
-      'Client-ID': CLIENT_ID,
-      'Authorization': `Bearer ${OAUTH_TOKEN}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
