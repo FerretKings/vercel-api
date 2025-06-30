@@ -5,12 +5,13 @@ const CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET;
 const BROADCASTER_USER_ID = process.env.BROADCASTER_USER_ID;
 const MODERATOR_USER_ID = process.env.MODERATOR_USER_ID;
 
-// These should be initially set in your Vercel env vars
 const INITIAL_OAUTH_TOKEN = process.env.TWITCH_OAUTH_TOKEN;
 const REFRESH_TOKEN = process.env.TWITCH_REFRESH_TOKEN;
 
-const GLOBAL_COOLDOWN = 2 * 60 * 1000; // 2 minutes in ms
-const USER_COOLDOWN = 60 * 60 * 1000;  // 60 minutes in ms
+const GLOBAL_COOLDOWN = 2 * 60 * 1000;      // 2 minutes in ms (cron will run every 2 min, so keep this at 2 min)
+const USER_COOLDOWN = 60 * 60 * 1000;       // 60 minutes in ms
+
+const SHOUTOUT_QUEUE_KEY = 'shoutout_queue';
 
 // Get the latest OAuth token from KV, fallback to env var if not set yet
 async function getOAuthToken() {
@@ -18,12 +19,10 @@ async function getOAuthToken() {
   return kvToken || INITIAL_OAUTH_TOKEN;
 }
 
-// Store the new token in KV
 async function setOAuthToken(token) {
   await kv.set('twitch_access_token', token);
 }
 
-// Refresh the OAuth token using refresh token
 async function refreshOAuthToken() {
   const url = 'https://id.twitch.tv/oauth2/token';
   const params = new URLSearchParams({
@@ -43,13 +42,11 @@ async function refreshOAuthToken() {
   const data = await res.json();
   await setOAuthToken(data.access_token);
   if (data.refresh_token) {
-    // Optionally update the refresh token if Twitch rotated it
     await kv.set('twitch_refresh_token', data.refresh_token);
   }
   return data.access_token;
 }
 
-// Helper to make Twitch API calls with token refresh on 401
 async function twitchApiFetch(url, options = {}, attempt = 0) {
   const MAX_ATTEMPTS = 2;
   let token = await getOAuthToken();
@@ -60,7 +57,6 @@ async function twitchApiFetch(url, options = {}, attempt = 0) {
   };
   let res = await fetch(url, { ...options, headers });
   if (res.status === 401 && attempt < MAX_ATTEMPTS) {
-    // Try refreshing the token and retrying
     token = await refreshOAuthToken();
     const retryHeaders = {
       ...options.headers,
@@ -72,7 +68,6 @@ async function twitchApiFetch(url, options = {}, attempt = 0) {
   return res;
 }
 
-// Check if the broadcaster is live on Twitch
 async function isChannelLive(userId) {
   const url = `https://api.twitch.tv/helix/streams?user_id=${userId}`;
   const res = await twitchApiFetch(url);
@@ -80,7 +75,6 @@ async function isChannelLive(userId) {
   return data.data && data.data.length > 0;
 }
 
-// Fetch Twitch user info
 async function getTwitchUser(login) {
   const url = `https://api.twitch.tv/helix/users?login=${encodeURIComponent(login)}`;
   const res = await twitchApiFetch(url);
@@ -92,7 +86,6 @@ async function getTwitchUser(login) {
   return data.data && data.data[0] ? data.data[0] : null;
 }
 
-// Send a shoutout via Twitch API
 async function sendShoutout(toBroadcasterId) {
   const url = 'https://api.twitch.tv/helix/chat/shoutouts';
   const res = await twitchApiFetch(url, {
@@ -109,6 +102,11 @@ async function sendShoutout(toBroadcasterId) {
   return res.ok;
 }
 
+// Add user to the shoutout queue
+async function enqueueShoutout(userParam) {
+  await kv.rpush(SHOUTOUT_QUEUE_KEY, userParam);
+}
+
 export default async function handler(req, res) {
   const userParam = (req.query.user || '').replace('@','').trim().toLowerCase();
   if (!userParam) {
@@ -119,36 +117,38 @@ export default async function handler(req, res) {
   // 1. Validate Twitch username
   const targetUser = await getTwitchUser(userParam);
   if (!targetUser) {
-    res.status(200).send(`Invalid channel specified.`);
+    res.status(200).send('Invalid channel specified.');
     return;
   }
-  const targetId = targetUser.id;
 
-  // 2. Always send the chat message for StreamElements to post
-  // (This is returned at the end, even if the API shoutout doesn't happen)
-
-  // 3. Check cooldowns for API shoutout
+  // 2. Check cooldowns for API shoutout
   const now = Date.now();
   const lastGlobal = await kv.get('shoutout_last_global') || 0;
   const lastUser = await kv.get(`shoutout_last_${userParam}`) || 0;
 
-  // 4. If not enough time has passed, do not send a shoutout
-  let triedApiShoutout = false;
-  if (now - lastGlobal >= GLOBAL_COOLDOWN && now - lastUser >= USER_COOLDOWN) {
-    // 5. Check if broadcaster is live before sending API shoutout
+  // 3. If not enough time has passed, queue the shoutout for later
+  if (now - lastGlobal < GLOBAL_COOLDOWN || now - lastUser < USER_COOLDOWN) {
+    // Add to queue only if not already in queue
+    const queue = await kv.lrange(SHOUTOUT_QUEUE_KEY, 0, -1) || [];
+    if (!queue.includes(userParam)) {
+      await enqueueShoutout(userParam);
+      console.log(`User ${userParam} added to shoutout queue.`);
+    } else {
+      console.log(`User ${userParam} is already in the shoutout queue.`);
+    }
+  } else {
+    // 4. Check if broadcaster is live before sending API shoutout
     const live = await isChannelLive(BROADCASTER_USER_ID);
     if (live) {
-      const success = await sendShoutout(targetId);
+      const success = await sendShoutout(targetUser.id);
       if (success) {
         await kv.set('shoutout_last_global', now);
         await kv.set(`shoutout_last_${userParam}`, now);
-        triedApiShoutout = true;
+        console.log(`Shoutout sent for user ${userParam}.`);
       }
     }
-    // If not live, do nothing (do not attempt or queue API shoutout)
   }
-  // If on cooldown, do nothing (do not queue API shoutout)
 
-  // 6. Always return chat message for StreamElements to post
-  res.status(200).send(`Go follow ${userParam} at https://twitch.tv/${userParam} ! Do it now!`);
+  // 5. Always return chat message for StreamElements to post (with formatting fix)
+  res.status(200).send(`Go follow ${userParam} at https://twitch.tv/${userParam}! Do it now!`);
 }
