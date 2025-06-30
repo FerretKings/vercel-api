@@ -31,6 +31,10 @@ async function getTwitchUser(login) {
     }
   });
   const data = await res.json();
+  // Debug: log both the response status and the JSON body
+  console.log("Twitch API user lookup for login:", login);
+  console.log("Response status:", res.status);
+  console.log("Response body:", JSON.stringify(data));
   return data.data && data.data[0] ? data.data[0] : null;
 }
 
