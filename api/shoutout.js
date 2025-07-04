@@ -121,12 +121,20 @@ export default async function handler(req, res) {
     return;
   }
 
-  // 2. Check cooldowns for API shoutout
+  // 2. Check if broadcaster is live BEFORE any cooldown or queue logic
+  const live = await isChannelLive(BROADCASTER_USER_ID);
+  if (!live) {
+    // Not live: only return the chat message, do not enqueue
+    res.status(200).send(`Go follow ${userParam} at https://twitch.tv/${userParam}! Do it now!`);
+    return;
+  }
+
+  // 3. Check cooldowns for API shoutout
   const now = Date.now();
   const lastGlobal = await kv.get('shoutout_last_global') || 0;
   const lastUser = await kv.get(`shoutout_last_${userParam}`) || 0;
 
-  // 3. If not enough time has passed, queue the shoutout for later
+  // 4. If not enough time has passed, queue the shoutout for later
   if (now - lastGlobal < GLOBAL_COOLDOWN || now - lastUser < USER_COOLDOWN) {
     // Add to queue only if not already in queue
     const queue = await kv.lrange(SHOUTOUT_QUEUE_KEY, 0, -1) || [];
@@ -137,18 +145,15 @@ export default async function handler(req, res) {
       console.log(`User ${userParam} is already in the shoutout queue.`);
     }
   } else {
-    // 4. Check if broadcaster is live before sending API shoutout
-    const live = await isChannelLive(BROADCASTER_USER_ID);
-    if (live) {
-      const success = await sendShoutout(targetUser.id);
-      if (success) {
-        await kv.set('shoutout_last_global', now);
-        await kv.set(`shoutout_last_${userParam}`, now);
-        console.log(`Shoutout sent for user ${userParam}.`);
-      }
+    // 5. Send API shoutout immediately
+    const success = await sendShoutout(targetUser.id);
+    if (success) {
+      await kv.set('shoutout_last_global', now);
+      await kv.set(`shoutout_last_${userParam}`, now);
+      console.log(`Shoutout sent for user ${userParam}.`);
     }
   }
 
-  // 5. Always return chat message for StreamElements to post (with formatting fix)
+  // 6. Always return chat message for StreamElements to post
   res.status(200).send(`Go follow ${userParam} at https://twitch.tv/${userParam}! Do it now!`);
 }
