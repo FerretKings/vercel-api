@@ -1,5 +1,3 @@
-name: Enable/Disable cron-job.org job based on Twitch Live Status
-
 on:
   schedule:
     - cron: '*/5 * * * *' # Every 5 minutes
