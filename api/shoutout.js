@@ -125,7 +125,7 @@ export default async function handler(req, res) {
   const live = await isChannelLive(BROADCASTER_USER_ID);
   if (!live) {
     // Not live: only return the chat message, do not enqueue
-    res.status(200).send(`Go follow ${userParam} at https://twitch.tv/${userParam}! Do it now!`);
+    res.status(200).send(`Go follow ${userParam} at https://twitch.tv/${userParam} ! Do it now!`);
     return;
   }
 
@@ -155,5 +155,5 @@ export default async function handler(req, res) {
   }
 
   // 6. Always return chat message for StreamElements to post
-  res.status(200).send(`Go follow ${userParam} at https://twitch.tv/${userParam}! Do it now!`);
+  res.status(200).send(`Go follow ${userParam} at https://twitch.tv/${userParam} ! Do it now!`);
 }
