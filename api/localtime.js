@@ -48,16 +48,29 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // Always use the timezone from cityTimezones if available
   const matches = cityTimezones.lookupViaCity(query);
 
   let tz;
   let locationLabel;
-  if (matches.length > 0 && matches[0].timezone) {
-    tz = matches[0].timezone;
-    locationLabel = `${matches[0].city}, ${matches[0].region || matches[0].country}`;
+
+  if (matches.length > 0) {
+    // Prefer US cities if ambiguous
+    let preferredMatches = matches.filter(m => m.country === 'United States');
+    if (preferredMatches.length === 0) {
+      preferredMatches = matches;
+    }
+    // If population is available, sort by it descending
+    preferredMatches.sort((a, b) => (b.population || 0) - (a.population || 0));
+    const found = preferredMatches[0];
+
+    if (!found.timezone) {
+      res.setHeader('Content-Type', 'text/plain');
+      res.status(404).send('Could not find a timezone for that city. Try a major city or check your spelling.');
+      return;
+    }
+    tz = found.timezone;
+    locationLabel = `${found.city}, ${found.region || found.country}`;
   } else {
-    // If the lookup fails, fail gracefully and don't try to use the query as a timezone!
     res.setHeader('Content-Type', 'text/plain');
     res.status(404).send('Could not find a timezone for that city. Try a major city or check your spelling.');
     return;
