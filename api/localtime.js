@@ -1,5 +1,8 @@
-import fetch from 'node-fetch';
-import cityTimezones from 'city-timezones';
+// Use CommonJS syntax for maximum compatibility on Vercel.
+// If your package.json does NOT include "type": "module", use require() and module.exports
+
+const fetch = require('node-fetch');
+const cityTimezones = require('city-timezones');
 
 let lastCalled = 0; // In-memory cooldown timestamp
 
@@ -28,7 +31,7 @@ function formatDate(dateObj) {
   return `${hours}:${minutes} | ${month}/${day}/${year}`;
 }
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   if (req.method !== 'GET') {
     res.status(405).send('Method Not Allowed');
     return;
@@ -50,11 +53,14 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Use cityTimezones to look up the city name and get a timezone name for the API
   const matches = cityTimezones.lookupViaCity(query);
 
   let tz;
   let locationLabel;
+
   if (matches.length > 0) {
+    // Sort: prioritize higher population, then country code == US, then just first
     matches.sort((a, b) => {
       const usStates = [
         "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"
@@ -73,46 +79,16 @@ export default async function handler(req, res) {
     });
 
     const found = matches[0];
-    tz = found.timezone;
+    tz = found.timezone; // THIS is e.g., "America/Chicago"
     locationLabel = `${found.city}, ${found.region || found.country}`;
   } else {
+    // If not found in cityTimezones, try to use a direct match to timezone
+    // This is fallback - almost always unsuccessful for US cities, but may help for "Europe/London", etc
     tz = query.replace(/ /g, '_');
     locationLabel = query;
   }
 
+  // Always use tz for the API call, never the raw query!
   let timeApiUrl = `https://worldtimeapi.org/api/timezone/${encodeURIComponent(tz)}`;
   let apiResult;
-  try {
-    let apiRes = await fetch(timeApiUrl);
-    if (apiRes.status === 404 && matches.length > 0) {
-      tz = matches[0].timezone;
-      timeApiUrl = `https://worldtimeapi.org/api/timezone/${encodeURIComponent(tz)}`;
-      apiRes = await fetch(timeApiUrl);
-    }
-    if (apiRes.status !== 200) throw new Error('Not found');
-    apiResult = await apiRes.json();
-  } catch (e) {
-    res.setHeader('Content-Type', 'text/plain');
-    res.status(404).send('Invalid location specified, please try again in 1 minute.');
-    return;
-  }
-
-  lastCalled = Date.now();
-
-  // Parse UTC datetime and apply UTC offset to get local time
-  const baseUtcDate = new Date(apiResult.datetime);
-  const localDate = applyUtcOffset(baseUtcDate, apiResult.utc_offset);
-  const utcOffset = apiResult.utc_offset; // e.g., "+01:00"
-  const offsetShort = utcOffset.replace(/^([+-]\d{2}):(\d{2})$/, '$1');
-  const utcString = `UTC Conversion ${offsetShort}`;
-
-  let locLabel = locationLabel.replace(/_/g, ' ');
-  let locParts = locLabel.split(',').map(x => x.trim());
-  if (locParts.length > 1 && locParts[1].toLowerCase() === locParts[0].toLowerCase()) locParts.pop();
-  locLabel = locParts.join(', ');
-
-  const response = `Current time in ${locLabel}: ${formatDate(localDate)} (${utcString})`;
-
-  res.setHeader('Content-Type', 'text/plain');
-  res.status(200).send(response);
-}
+ 
