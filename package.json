@@ -2,6 +2,8 @@
   "name": "vercel-api",
   "version": "1.0.0",
   "dependencies": {
-    "@vercel/kv": "^3.0.0"
+    "@vercel/kv": "^3.0.0",
+    "city-timezones": "^1.2.0",
+    "node-fetch": "^2.6.7"
   }
 }
