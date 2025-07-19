@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const Fuse = require('fuse.js');
 
 // US state codes and names for flexible matching
 const usStates = {
@@ -22,8 +23,9 @@ const stateNameToCode = Object.fromEntries(
 function pad2(n) { return n < 10 ? '0' + n : n; }
 
 let cities = null;
+let fuse = null;
 
-// Load and cache city data
+// Load and cache city data and build Fuse instance for fuzzy search
 function loadCities() {
   if (cities) return cities;
   const filePath = path.join(__dirname, 'cities5000.txt');
@@ -44,25 +46,26 @@ function loadCities() {
         population: parseInt(cols[14] || "0", 10)
       };
     });
+  // Build Fuse instance for fuzzy searching on name fields
+  fuse = new Fuse(cities, {
+    keys: ['name', 'asciiname', 'alternatenames'],
+    threshold: 0.3, // Lower = stricter, higher = more forgiving (0.3 is a good start)
+    minMatchCharLength: 2
+  });
   return cities;
 }
 
 // Parse input like "Paris Texas", "Paris, Texas", "Paris, TX", "Paris TX", "Paris, Texas, US" etc.
 function parseInput(input) {
-  // Accept both comma and space separated tokens, but treat quoted phrases as single (e.g., "New York")
-  // Split on comma first, or fallback to spaces if no commas present
   let parts = input.includes(',')
     ? input.split(',').map(p => p.trim())
     : input.trim().split(/\s+/);
 
-  // Merge consecutive tokens for multi-word city/state names (e.g., "New York", "Los Angeles")
-  // Strategy: Always treat first token(s) as city, rest as possible state/country
   let city = parts[0];
   let admin1 = null;
   let country = null;
 
   if (parts.length > 1) {
-    // If next part is a US state code or full name, treat as admin1
     let part1 = parts[1].toLowerCase();
     if (usStates[part1.toUpperCase()]) {
       admin1 = part1.toUpperCase();
@@ -80,29 +83,26 @@ function parseInput(input) {
 
 // Flexible matching: city+state (US) or city+region/country (elsewhere)
 function findCityFlexible(query) {
+  loadCities(); // Ensure cities and fuse are loaded
   const { city, admin1, country } = parseInput(query);
-  const cities = loadCities();
 
-  // 1. Fuzzy match city name (case-insensitive, exact or asciiname)
+  // 1. Exact (case-insensitive) match first
   let matches = cities.filter(c =>
     c.name.toLowerCase() === city.toLowerCase() ||
     c.asciiname.toLowerCase() === city.toLowerCase()
   );
 
   if (admin1) {
-    // If admin1 is a US state code, filter for US only, otherwise match globally
     if (usStates[admin1]) {
       matches = matches.filter(c =>
         c.country === "US" && c.admin1 === admin1
       );
     } else if (stateNameToCode[admin1.toLowerCase()]) {
-      // Full state name (normalize to code)
       const code = stateNameToCode[admin1.toLowerCase()];
       matches = matches.filter(c =>
         c.country === "US" && c.admin1 === code
       );
     } else {
-      // Non-US: try to match admin1 against GeoNames admin1 code or alternatenames
       matches = matches.filter(c =>
         (c.admin1 && c.admin1.toLowerCase() === admin1.toLowerCase()) ||
         (c.alternatenames && c.alternatenames.toLowerCase().includes(admin1.toLowerCase()))
@@ -116,11 +116,49 @@ function findCityFlexible(query) {
     );
   }
 
-  // 2. If multiple matches, pick most populous
-  if (matches.length > 1) {
-    matches.sort((a, b) => b.population - a.population);
+  if (matches.length > 0) {
+    if (matches.length > 1) matches.sort((a, b) => b.population - a.population);
+    return matches[0];
   }
-  return matches[0] || null;
+
+  // 2. Fuzzy fallback: use Fuse.js
+  // Build the fuzzy query string (can combine city, admin1, country if present)
+  let fuseQuery = city;
+  if (admin1) fuseQuery += ' ' + admin1;
+  if (country) fuseQuery += ' ' + country;
+  const results = fuse.search(fuseQuery);
+  if (results.length === 0) return null;
+
+  // If admin1/country specified, filter fuzzy matches to honor them
+  let fuzzyMatches = results.map(r => r.item);
+
+  if (admin1) {
+    if (usStates[admin1]) {
+      fuzzyMatches = fuzzyMatches.filter(c =>
+        c.country === "US" && c.admin1 === admin1
+      );
+    } else if (stateNameToCode[admin1.toLowerCase()]) {
+      const code = stateNameToCode[admin1.toLowerCase()];
+      fuzzyMatches = fuzzyMatches.filter(c =>
+        c.country === "US" && c.admin1 === code
+      );
+    } else {
+      fuzzyMatches = fuzzyMatches.filter(c =>
+        (c.admin1 && c.admin1.toLowerCase() === admin1.toLowerCase()) ||
+        (c.alternatenames && c.alternatenames.toLowerCase().includes(admin1.toLowerCase()))
+      );
+    }
+  }
+  if (country) {
+    fuzzyMatches = fuzzyMatches.filter(c =>
+      c.country.toLowerCase() === country.toLowerCase()
+    );
+  }
+
+  if (fuzzyMatches.length > 1) {
+    fuzzyMatches.sort((a, b) => b.population - a.population);
+  }
+  return fuzzyMatches[0] || null;
 }
 
 // Get UTC offset in hours (e.g. -5) for a given IANA timezone and date
