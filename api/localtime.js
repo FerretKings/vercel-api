@@ -10,12 +10,27 @@ const path = require('path');
 
 let cities = null;
 
+// US state codes to full names (for output formatting)
+const usStates = {
+  "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California", "CO": "Colorado",
+  "CT": "Connecticut", "DE": "Delaware", "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho",
+  "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana",
+  "ME": "Maine", "MD": "Maryland", "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota",
+  "MS": "Mississippi", "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+  "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York", "NC": "North Carolina",
+  "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma", "OR": "Oregon", "PA": "Pennsylvania",
+  "RI": "Rhode Island", "SC": "South Carolina", "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas",
+  "UT": "Utah", "VT": "Vermont", "VA": "Virginia", "WA": "Washington", "WV": "West Virginia",
+  "WI": "Wisconsin", "WY": "Wyoming"
+};
+
+function pad2(n) { return n < 10 ? '0' + n : n; }
+
 // Load and cache city data
 function loadCities() {
   if (cities) return cities;
   const filePath = path.join(__dirname, 'cities5000.txt');
   const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
-  // Parse and map to objects for easier searching
   cities = lines
     .filter(Boolean)
     .map(line => {
@@ -39,7 +54,9 @@ function loadCities() {
 function findCity(query) {
   const parts = query.split(',').map(p => p.trim().toLowerCase());
   const cities = loadCities();
-  let matches = cities.filter(city => city.name.toLowerCase() === parts[0] || city.asciiname.toLowerCase() === parts[0]);
+  let matches = cities.filter(city =>
+    city.name.toLowerCase() === parts[0] || city.asciiname.toLowerCase() === parts[0]
+  );
 
   if (parts.length > 1) {
     // Try to match admin1 (state) or alternatenames for US
@@ -58,10 +75,58 @@ function findCity(query) {
   return matches[0] || null;
 }
 
+// Get UTC offset in hours (e.g. -5) for a given IANA timezone and JS Date
+function getUtcOffset(tz, date = new Date()) {
+  // DateTimeFormat gives offset in minutes as a string like "-05:00"
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hourCycle: 'h23',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+  // get the offset in minutes by comparing UTC and local times
+  const local = new Date(date.toLocaleString('en-US', { timeZone: tz }));
+  const utc = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const offsetMin = Math.round((local - utc) / 60000);
+  const offsetHr = offsetMin / 60;
+  return offsetHr;
+}
+
+function formatCityOutput(city, now = new Date()) {
+  // Figure out a nice display string for the location
+  let location = city.name;
+  if (city.country === "US" && city.admin1 && usStates[city.admin1]) {
+    location += `, ${usStates[city.admin1]}`;
+  }
+  else if (city.country === "US" && city.admin1) {
+    location += `, ${city.admin1}`;
+  }
+  if (city.country === "US") {
+    location += " (USA)";
+  } else {
+    location += ` (${city.country})`;
+  }
+
+  // Get the local time in the city's timezone
+  const localDate = new Date(now.toLocaleString('en-US', { timeZone: city.timezone }));
+  const hour = pad2(localDate.getHours());
+  const min = pad2(localDate.getMinutes());
+  const month = pad2(localDate.getMonth() + 1);
+  const day = pad2(localDate.getDate());
+  const year = localDate.getFullYear();
+
+  // Get UTC offset
+  const offset = getUtcOffset(city.timezone, now);
+  const offsetStr = (offset >= 0) ? `+${offset}` : `${offset}`;
+
+  return `Current time in ${location} is ${hour}:${min} | ${month}/${day}/${year} (UTC ${offsetStr})`;
+}
+
 module.exports = async (req, res) => {
   const query = (req.query.query || req.query.q || '').trim();
   if (!query) {
-    res.status(400).send('Please provide a city, e.g., !localtime London or !localtime Springfield, MO, US');
+    res.status(400).send('Please provide a city, e.g., !localtime London or !localtime Springfield, MO');
     return;
   }
 
@@ -71,9 +136,6 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // You can add code here to call TimeZoneDB using city.timezone or city.latitude/longitude for live time
-  // For now, just echo the timezone info:
-  res.status(200).send(
-    `City: ${city.name}, Country: ${city.country}, Timezone: ${city.timezone}, Population: ${city.population}`
-  );
+  const output = formatCityOutput(city);
+  res.status(200).send(output);
 };
