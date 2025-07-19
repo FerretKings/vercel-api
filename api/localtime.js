@@ -1,5 +1,5 @@
-const fetch = require('node-fetch');
-const cityTimezones = require('city-timezones');
+import fetch from 'node-fetch';
+import cityTimezones from 'city-timezones';
 
 let lastCalled = 0; // In-memory cooldown timestamp
 
@@ -28,7 +28,7 @@ function formatDate(dateObj) {
   return `${hours}:${minutes} | ${month}/${day}/${year}`;
 }
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (req.method !== 'GET') {
     res.status(405).send('Method Not Allowed');
     return;
@@ -115,4 +115,4 @@ module.exports = async (req, res) => {
 
   res.setHeader('Content-Type', 'text/plain');
   res.status(200).send(response);
-};
+}
