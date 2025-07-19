@@ -99,8 +99,8 @@ module.exports = async (req, res) => {
     let usMatches = matches.filter(m => m.country === 'United States');
     let candidates = usMatches.length > 0 ? usMatches : matches;
 
-    // If a state was specified, try to match by state abbreviation or state name (case-insensitive)
     if (state && candidates.length > 0) {
+      // Match region by abbreviation, full name, or partial matches (in both directions)
       let stateMatches = candidates.filter(
         m =>
           m.region &&
@@ -109,8 +109,19 @@ module.exports = async (req, res) => {
             m.region.toLowerCase() === state.name.toLowerCase()
           )
       );
+      if (stateMatches.length === 0) {
+        stateMatches = candidates.filter(
+          m =>
+            m.region &&
+            (
+              m.region.toLowerCase().includes(state.abbr.toLowerCase()) ||
+              m.region.toLowerCase().includes(state.name.toLowerCase()) ||
+              state.abbr.toLowerCase().includes(m.region.toLowerCase()) ||
+              state.name.toLowerCase().includes(m.region.toLowerCase())
+            )
+        );
+      }
       if (stateMatches.length > 0) {
-        // Prefer the largest city if population data is available
         stateMatches.sort((a, b) => (b.population || 0) - (a.population || 0));
         found = stateMatches[0];
       }
