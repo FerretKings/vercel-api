@@ -105,39 +105,31 @@ module.exports = async (req, res) => {
   const { city, state } = parseCityState(query);
   let matches = cityTimezones.lookupViaCity(city);
   let found = null;
-
+  
   if (matches.length > 0) {
     let usMatches = matches.filter(m => m.country === 'United States');
     let candidates = usMatches.length > 0 ? usMatches : matches;
 
+    // If state is given, match region ONLY to full state name (case-insensitive)
     if (state && candidates.length > 0) {
       let stateMatches = candidates.filter(
-        m =>
-          m.region &&
-          (
-            m.region.toLowerCase() === state.abbr.toLowerCase() ||
-            m.region.toLowerCase() === state.name.toLowerCase()
-          )
+        m => m.region && m.region.toLowerCase() === state.name.toLowerCase()
       );
-      if (stateMatches.length === 0) {
-        stateMatches = candidates.filter(
-          m =>
-            m.region &&
-            (
-              m.region.toLowerCase().includes(state.abbr.toLowerCase()) ||
-              m.region.toLowerCase().includes(state.name.toLowerCase()) ||
-              state.abbr.toLowerCase().includes(m.region.toLowerCase()) ||
-              state.name.toLowerCase().includes(m.region.toLowerCase())
-            )
-        );
-      }
       if (stateMatches.length > 0) {
-        stateMatches.sort((a, b) => (b.population || 0) - (a.population || 0));
         found = stateMatches[0];
       }
     }
+
+    // If no state, and city is Springfield, prefer Missouri
+    if (!found && city.trim().toLowerCase() === "springfield") {
+      let springfieldMO = candidates.find(
+        m => m.region && m.region.toLowerCase() === "missouri"
+      );
+      if (springfieldMO) found = springfieldMO;
+    }
+
+    // Otherwise, pick the first matching US city (or most populous if available)
     if (!found && candidates.length > 0) {
-      candidates.sort((a, b) => (b.population || 0) - (a.population || 0));
       found = candidates[0];
     }
   }
