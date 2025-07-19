@@ -26,74 +26,39 @@ function formatDate(dateObj) {
   return `${hours}:${minutes} | ${month}/${day}/${year}`;
 }
 
-// Helper: Recognize US state abbreviations and full names
+// US states, for matching
 const usStates = [
-  { abbr: "AL", name: "Alabama" },
-  { abbr: "AK", name: "Alaska" },
-  { abbr: "AZ", name: "Arizona" },
-  { abbr: "AR", name: "Arkansas" },
-  { abbr: "CA", name: "California" },
-  { abbr: "CO", name: "Colorado" },
-  { abbr: "CT", name: "Connecticut" },
-  { abbr: "DE", name: "Delaware" },
-  { abbr: "FL", name: "Florida" },
-  { abbr: "GA", name: "Georgia" },
-  { abbr: "HI", name: "Hawaii" },
-  { abbr: "ID", name: "Idaho" },
-  { abbr: "IL", name: "Illinois" },
-  { abbr: "IN", name: "Indiana" },
-  { abbr: "IA", name: "Iowa" },
-  { abbr: "KS", name: "Kansas" },
-  { abbr: "KY", name: "Kentucky" },
-  { abbr: "LA", name: "Louisiana" },
-  { abbr: "ME", name: "Maine" },
-  { abbr: "MD", name: "Maryland" },
-  { abbr: "MA", name: "Massachusetts" },
-  { abbr: "MI", name: "Michigan" },
-  { abbr: "MN", name: "Minnesota" },
-  { abbr: "MS", name: "Mississippi" },
-  { abbr: "MO", name: "Missouri" },
-  { abbr: "MT", name: "Montana" },
-  { abbr: "NE", name: "Nebraska" },
-  { abbr: "NV", name: "Nevada" },
-  { abbr: "NH", name: "New Hampshire" },
-  { abbr: "NJ", name: "New Jersey" },
-  { abbr: "NM", name: "New Mexico" },
-  { abbr: "NY", name: "New York" },
-  { abbr: "NC", name: "North Carolina" },
-  { abbr: "ND", name: "North Dakota" },
-  { abbr: "OH", name: "Ohio" },
-  { abbr: "OK", name: "Oklahoma" },
-  { abbr: "OR", name: "Oregon" },
-  { abbr: "PA", name: "Pennsylvania" },
-  { abbr: "RI", name: "Rhode Island" },
-  { abbr: "SC", name: "South Carolina" },
-  { abbr: "SD", name: "South Dakota" },
-  { abbr: "TN", name: "Tennessee" },
-  { abbr: "TX", name: "Texas" },
-  { abbr: "UT", name: "Utah" },
-  { abbr: "VT", name: "Vermont" },
-  { abbr: "VA", name: "Virginia" },
-  { abbr: "WA", name: "Washington" },
-  { abbr: "WV", name: "West Virginia" },
-  { abbr: "WI", name: "Wisconsin" },
-  { abbr: "WY", name: "Wyoming" }
+  { abbr: "AL", name: "Alabama" }, { abbr: "AK", name: "Alaska" }, { abbr: "AZ", name: "Arizona" },
+  { abbr: "AR", name: "Arkansas" }, { abbr: "CA", name: "California" }, { abbr: "CO", name: "Colorado" },
+  { abbr: "CT", name: "Connecticut" }, { abbr: "DE", name: "Delaware" }, { abbr: "FL", name: "Florida" },
+  { abbr: "GA", name: "Georgia" }, { abbr: "HI", name: "Hawaii" }, { abbr: "ID", name: "Idaho" },
+  { abbr: "IL", name: "Illinois" }, { abbr: "IN", name: "Indiana" }, { abbr: "IA", name: "Iowa" },
+  { abbr: "KS", name: "Kansas" }, { abbr: "KY", name: "Kentucky" }, { abbr: "LA", name: "Louisiana" },
+  { abbr: "ME", name: "Maine" }, { abbr: "MD", name: "Maryland" }, { abbr: "MA", name: "Massachusetts" },
+  { abbr: "MI", name: "Michigan" }, { abbr: "MN", name: "Minnesota" }, { abbr: "MS", name: "Mississippi" },
+  { abbr: "MO", name: "Missouri" }, { abbr: "MT", name: "Montana" }, { abbr: "NE", name: "Nebraska" },
+  { abbr: "NV", name: "Nevada" }, { abbr: "NH", name: "New Hampshire" }, { abbr: "NJ", name: "New Jersey" },
+  { abbr: "NM", name: "New Mexico" }, { abbr: "NY", name: "New York" }, { abbr: "NC", name: "North Carolina" },
+  { abbr: "ND", name: "North Dakota" }, { abbr: "OH", name: "Ohio" }, { abbr: "OK", name: "Oklahoma" },
+  { abbr: "OR", name: "Oregon" }, { abbr: "PA", name: "Pennsylvania" }, { abbr: "RI", name: "Rhode Island" },
+  { abbr: "SC", name: "South Carolina" }, { abbr: "SD", name: "South Dakota" }, { abbr: "TN", name: "Tennessee" },
+  { abbr: "TX", name: "Texas" }, { abbr: "UT", name: "Utah" }, { abbr: "VT", name: "Vermont" },
+  { abbr: "VA", name: "Virginia" }, { abbr: "WA", name: "Washington" }, { abbr: "WV", name: "West Virginia" },
+  { abbr: "WI", name: "Wisconsin" }, { abbr: "WY", name: "Wyoming" }
 ];
 
+// Parse a query like "Springfield MO" or "Springfield Missouri"
 function parseCityState(query) {
-  // e.g. "Springfield MO", "Springfield Missouri"
   const parts = query.trim().split(/[\s,]+/);
   if (parts.length < 2) return { city: query.trim(), state: null };
 
   let possibleState = parts[parts.length - 1];
-  // Check if last part is state abbreviation or full name
   let stateObj = usStates.find(
     s =>
       s.abbr.toLowerCase() === possibleState.toLowerCase() ||
       s.name.toLowerCase() === possibleState.toLowerCase()
   );
   if (stateObj) {
-    // City is everything except last part
     return {
       city: parts.slice(0, parts.length - 1).join(" "),
       state: stateObj
@@ -127,67 +92,73 @@ module.exports = async (req, res) => {
   const { city, state } = parseCityState(query);
 
   let matches = cityTimezones.lookupViaCity(city);
+  let found = null;
 
-  // Prefer US matches, then filter by state if available
   if (matches.length > 0) {
-    let preferredMatches = matches.filter(m => m.country === 'United States');
-    if (state && preferredMatches.length > 0) {
-      // Try to match by state abbreviation or full name
-      let stateMatches = preferredMatches.filter(
+    // Only US matches for ambiguous cities
+    let usMatches = matches.filter(m => m.country === 'United States');
+    let candidates = usMatches.length > 0 ? usMatches : matches;
+
+    // If a state was specified, try to match by state abbreviation or state name (case-insensitive)
+    if (state && candidates.length > 0) {
+      let stateMatches = candidates.filter(
         m =>
-          (m.region &&
-            (m.region.toLowerCase() === state.abbr.toLowerCase() ||
-             m.region.toLowerCase() === state.name.toLowerCase()))
+          m.region &&
+          (
+            m.region.toLowerCase() === state.abbr.toLowerCase() ||
+            m.region.toLowerCase() === state.name.toLowerCase()
+          )
       );
       if (stateMatches.length > 0) {
-        preferredMatches = stateMatches;
+        // Prefer the largest city if population data is available
+        stateMatches.sort((a, b) => (b.population || 0) - (a.population || 0));
+        found = stateMatches[0];
       }
     }
-    // Sort by population if available (descending)
-    preferredMatches.sort((a, b) => (b.population || 0) - (a.population || 0));
-    const found = preferredMatches[0] || matches[0];
 
-    if (!found.timezone) {
-      res.setHeader('Content-Type', 'text/plain');
-      res.status(404).send('Could not find a timezone for that city. Try a major city or check your spelling.');
-      return;
+    // If no state match, just pick most populous US city with this name
+    if (!found && candidates.length > 0) {
+      candidates.sort((a, b) => (b.population || 0) - (a.population || 0));
+      found = candidates[0];
     }
-    const tz = found.timezone;
-    // Compose label: City, State, Country (if US and state available)
-    let locationLabel = found.city;
-    if (found.country === 'United States' && found.region) {
-      locationLabel += `, ${found.region}, United States of America`;
-    } else {
-      locationLabel += `, ${found.country}`;
-    }
+  }
 
-    let timeApiUrl = `https://worldtimeapi.org/api/timezone/${encodeURIComponent(tz)}`;
-    let apiResult;
-    try {
-      let apiRes = await fetch(timeApiUrl);
-      if (apiRes.status !== 200) throw new Error('Not found');
-      apiResult = await apiRes.json();
-    } catch (e) {
-      res.setHeader('Content-Type', 'text/plain');
-      res.status(404).send('Invalid location specified, please try again in 1 minute.');
-      return;
-    }
-
-    lastCalled = Date.now();
-
-    const baseUtcDate = new Date(apiResult.datetime);
-    const localDate = applyUtcOffset(baseUtcDate, apiResult.utc_offset);
-    const utcOffset = apiResult.utc_offset;
-    const offsetShort = utcOffset.replace(/^([+-]\d{2}):(\d{2})$/, '$1');
-    const utcString = `UTC Conversion ${offsetShort}`;
-
-    const response = `Current time in ${locationLabel}: ${formatDate(localDate)} (${utcString})`;
-
-    res.setHeader('Content-Type', 'text/plain');
-    res.status(200).send(response);
-  } else {
+  if (!found || !found.timezone) {
     res.setHeader('Content-Type', 'text/plain');
     res.status(404).send('Could not find a timezone for that city. Try a major city or check your spelling.');
     return;
   }
+
+  const tz = found.timezone;
+  let locationLabel = found.city;
+  if (found.country === 'United States' && found.region) {
+    locationLabel += `, ${found.region}, United States of America`;
+  } else {
+    locationLabel += `, ${found.country}`;
+  }
+
+  let timeApiUrl = `https://worldtimeapi.org/api/timezone/${encodeURIComponent(tz)}`;
+  let apiResult;
+  try {
+    let apiRes = await fetch(timeApiUrl);
+    if (apiRes.status !== 200) throw new Error('Not found');
+    apiResult = await apiRes.json();
+  } catch (e) {
+    res.setHeader('Content-Type', 'text/plain');
+    res.status(404).send('Invalid location specified, please try again in 1 minute.');
+    return;
+  }
+
+  lastCalled = Date.now();
+
+  const baseUtcDate = new Date(apiResult.datetime);
+  const localDate = applyUtcOffset(baseUtcDate, apiResult.utc_offset);
+  const utcOffset = apiResult.utc_offset;
+  const offsetShort = utcOffset.replace(/^([+-]\d{2}):(\d{2})$/, '$1');
+  const utcString = `UTC Conversion ${offsetShort}`;
+
+  const response = `Current time in ${locationLabel}: ${formatDate(localDate)} (${utcString})`;
+
+  res.setHeader('Content-Type', 'text/plain');
+  res.status(200).send(response);
 };
