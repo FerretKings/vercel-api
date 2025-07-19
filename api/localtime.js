@@ -67,6 +67,19 @@ function parseCityState(query) {
   return { city: query.trim(), state: null };
 }
 
+// Fetch valid IANA timezones from WorldTimeAPI (cache for 1 hour)
+let validTimezones = null;
+let lastFetchedZones = 0;
+async function getValidTimezones() {
+  const now = Date.now();
+  if (!validTimezones || now - lastFetchedZones > 3600 * 1000) {
+    const res = await fetch('https://worldtimeapi.org/api/timezone');
+    validTimezones = await res.json();
+    lastFetchedZones = now;
+  }
+  return validTimezones;
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'GET') {
     res.status(405).send('Method Not Allowed');
@@ -90,17 +103,14 @@ module.exports = async (req, res) => {
   }
 
   const { city, state } = parseCityState(query);
-
   let matches = cityTimezones.lookupViaCity(city);
   let found = null;
 
   if (matches.length > 0) {
-    // Only US matches for ambiguous cities
     let usMatches = matches.filter(m => m.country === 'United States');
     let candidates = usMatches.length > 0 ? usMatches : matches;
 
     if (state && candidates.length > 0) {
-      // Match region by abbreviation, full name, or partial matches (in both directions)
       let stateMatches = candidates.filter(
         m =>
           m.region &&
@@ -126,8 +136,6 @@ module.exports = async (req, res) => {
         found = stateMatches[0];
       }
     }
-
-    // If no state match, just pick most populous US city with this name
     if (!found && candidates.length > 0) {
       candidates.sort((a, b) => (b.population || 0) - (a.population || 0));
       found = candidates[0];
@@ -140,7 +148,17 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const tz = found.timezone;
+  // Ensure only valid IANA timezones are used
+  const ianaTimezone = found.timezone;
+  const validZones = await getValidTimezones();
+  const isValidIANA = validZones.includes(ianaTimezone);
+
+  if (!isValidIANA) {
+    res.setHeader('Content-Type', 'text/plain');
+    res.status(404).send('Could not find a valid timezone for that city. Try a different city or spelling.');
+    return;
+  }
+
   let locationLabel = found.city;
   if (found.country === 'United States' && found.region) {
     locationLabel += `, ${found.region}, United States of America`;
@@ -148,7 +166,7 @@ module.exports = async (req, res) => {
     locationLabel += `, ${found.country}`;
   }
 
-  let timeApiUrl = `https://worldtimeapi.org/api/timezone/${encodeURIComponent(tz)}`;
+  let timeApiUrl = `https://worldtimeapi.org/api/timezone/${encodeURIComponent(ianaTimezone)}`;
   let apiResult;
   try {
     let apiRes = await fetch(timeApiUrl);
