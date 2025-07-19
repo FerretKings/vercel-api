@@ -7,16 +7,6 @@ function pad(n) {
   return n < 10 ? '0' + n : n;
 }
 
-function applyUtcOffset(dateObj, utcOffset) {
-  const match = utcOffset.match(/^([+-])(\d{2}):(\d{2})$/);
-  if (!match) return dateObj;
-  const sign = match[1] === '+' ? 1 : -1;
-  const hours = parseInt(match[2], 10);
-  const minutes = parseInt(match[3], 10);
-  const offsetMs = sign * ((hours * 60 + minutes) * 60 * 1000);
-  return new Date(dateObj.getTime() + offsetMs);
-}
-
 function formatDate(dateObj) {
   const hours = pad(dateObj.getHours());
   const minutes = pad(dateObj.getMinutes());
@@ -67,19 +57,6 @@ function parseCityState(query) {
   return { city: query.trim(), state: null };
 }
 
-// Fetch valid IANA timezones from WorldTimeAPI (cache for 1 hour)
-let validTimezones = null;
-let lastFetchedZones = 0;
-async function getValidTimezones() {
-  const now = Date.now();
-  if (!validTimezones || now - lastFetchedZones > 3600 * 1000) {
-    const res = await fetch('https://worldtimeapi.org/api/timezone');
-    validTimezones = await res.json();
-    lastFetchedZones = now;
-  }
-  return validTimezones;
-}
-
 module.exports = async (req, res) => {
   if (req.method !== 'GET') {
     res.status(405).send('Method Not Allowed');
@@ -105,7 +82,7 @@ module.exports = async (req, res) => {
   const { city, state } = parseCityState(query);
   let matches = cityTimezones.lookupViaCity(city);
   let found = null;
-  
+
   if (matches.length > 0) {
     let usMatches = matches.filter(m => m.country === 'United States');
     let candidates = usMatches.length > 0 ? usMatches : matches;
@@ -128,56 +105,55 @@ module.exports = async (req, res) => {
       if (springfieldMO) found = springfieldMO;
     }
 
-    // Otherwise, pick the first matching US city (or most populous if available)
+    // Otherwise, pick the first matching US city
     if (!found && candidates.length > 0) {
       found = candidates[0];
     }
   }
 
-  if (!found || !found.timezone) {
+  if (!found || !found.city || !found.country) {
     res.setHeader('Content-Type', 'text/plain');
     res.status(404).send('Could not find a timezone for that city. Try a major city or check your spelling.');
     return;
   }
 
-  // Ensure only valid IANA timezones are used
-  const ianaTimezone = found.timezone;
-  const validZones = await getValidTimezones();
-  const isValidIANA = validZones.includes(ianaTimezone);
-
-  if (!isValidIANA) {
+  // TimeZoneDB requires country code (US), region (state), and city
+  const apiKey = process.env.TIMEZONEDB_API_KEY;
+  if (!apiKey) {
     res.setHeader('Content-Type', 'text/plain');
-    res.status(404).send('Could not find a valid timezone for that city. Try a different city or spelling.');
+    res.status(500).send('TimeZoneDB API key is not set.');
     return;
   }
 
+  // Use get-time-zone by city, region, country code
+  const countryCode = found.country_code || "US"; // city-timezones sometimes omits country_code, default to US
+  const region = found.region || ""; // state full name
+  const tzdbUrl = `https://api.timezonedb.com/v2.1/get-time-zone?key=${apiKey}&format=json&by=city&country=${encodeURIComponent(countryCode)}&city=${encodeURIComponent(found.city)}${region ? `&region=${encodeURIComponent(region)}` : ''}`;
+
+  let tzdbData;
+  try {
+    const resp = await fetch(tzdbUrl);
+    tzdbData = await resp.json();
+    if (tzdbData.status !== "OK") throw new Error(tzdbData.message || "Timezone lookup failed");
+  } catch (e) {
+    res.setHeader('Content-Type', 'text/plain');
+    res.status(404).send('Could not retrieve time for that location. Please try again in 1 minute.');
+    return;
+  }
+
+  lastCalled = Date.now();
+
+  // Format time for output
   let locationLabel = found.city;
   if (found.country === 'United States' && found.region) {
     locationLabel += `, ${found.region}, United States of America`;
   } else {
     locationLabel += `, ${found.country}`;
   }
-
-  let timeApiUrl = `https://worldtimeapi.org/api/timezone/${encodeURIComponent(ianaTimezone)}`;
-  let apiResult;
-  try {
-    let apiRes = await fetch(timeApiUrl);
-    if (apiRes.status !== 200) throw new Error('Not found');
-    apiResult = await apiRes.json();
-  } catch (e) {
-    res.setHeader('Content-Type', 'text/plain');
-    res.status(404).send('Invalid location specified, please try again in 1 minute.');
-    return;
-  }
-
-  lastCalled = Date.now();
-
-  const baseUtcDate = new Date(apiResult.datetime);
-  const localDate = applyUtcOffset(baseUtcDate, apiResult.utc_offset);
-  const utcOffset = apiResult.utc_offset;
-  const offsetShort = utcOffset.replace(/^([+-]\d{2}):(\d{2})$/, '$1');
+  const localDate = new Date(tzdbData.formatted.replace(' ', 'T'));
+  const gmtOffset = tzdbData.gmtOffset / 3600;
+  const offsetShort = (gmtOffset >= 0 ? "+" : "") + gmtOffset.toString().padStart(2, "0");
   const utcString = `UTC Conversion ${offsetShort}`;
-
   const response = `Current time in ${locationLabel}: ${formatDate(localDate)} (${utcString})`;
 
   res.setHeader('Content-Type', 'text/plain');
