@@ -7,14 +7,12 @@ function pad(n) {
   return n < 10 ? '0' + n : n;
 }
 
-// Apply UTC offset (e.g., "+01:00", "-05:00") to a Date object (in UTC)
 function applyUtcOffset(dateObj, utcOffset) {
   const match = utcOffset.match(/^([+-])(\d{2}):(\d{2})$/);
   if (!match) return dateObj;
   const sign = match[1] === '+' ? 1 : -1;
   const hours = parseInt(match[2], 10);
   const minutes = parseInt(match[3], 10);
-  // Calculate total offset in milliseconds
   const offsetMs = sign * ((hours * 60 + minutes) * 60 * 1000);
   return new Date(dateObj.getTime() + offsetMs);
 }
@@ -35,7 +33,7 @@ module.exports = async (req, res) => {
   }
 
   const now = Date.now();
-  const COOLDOWN = 60 * 1000; // 60 seconds
+  const COOLDOWN = 60 * 1000;
   if (now - lastCalled < COOLDOWN) {
     const secondsLeft = Math.ceil((COOLDOWN - (now - lastCalled)) / 1000);
     res.setHeader('Content-Type', 'text/plain');
@@ -50,46 +48,25 @@ module.exports = async (req, res) => {
     return;
   }
 
+  // Always use the timezone from cityTimezones if available
   const matches = cityTimezones.lookupViaCity(query);
 
   let tz;
   let locationLabel;
-  if (matches.length > 0) {
-    matches.sort((a, b) => {
-      const usStates = [
-        "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"
-      ];
-      const userQueryUpper = query.toUpperCase();
-      const aIsUS = a.country === 'United States' || (a.iso2 === 'US');
-      const bIsUS = b.country === 'United States' || (b.iso2 === 'US');
-      const aHasState = usStates.some(st => userQueryUpper.includes(st));
-      const bHasState = usStates.some(st => userQueryUpper.includes(st));
-      if (aIsUS && !bIsUS) return -1;
-      if (!aIsUS && bIsUS) return 1;
-      if (aHasState && !bHasState) return -1;
-      if (!aHasState && bHasState) return 1;
-      if (b.population && a.population) return b.population - a.population;
-      return 0;
-    });
-
-    const found = matches[0];
-    tz = found.timezone; // always use the mapped timezone!
-    locationLabel = `${found.city}, ${found.region || found.country}`;
+  if (matches.length > 0 && matches[0].timezone) {
+    tz = matches[0].timezone;
+    locationLabel = `${matches[0].city}, ${matches[0].region || matches[0].country}`;
   } else {
-    // fallback: try to use the query as a timezone directly
-    tz = query.replace(/ /g, '_');
-    locationLabel = query;
+    // If the lookup fails, fail gracefully and don't try to use the query as a timezone!
+    res.setHeader('Content-Type', 'text/plain');
+    res.status(404).send('Could not find a timezone for that city. Try a major city or check your spelling.');
+    return;
   }
 
   let timeApiUrl = `https://worldtimeapi.org/api/timezone/${encodeURIComponent(tz)}`;
   let apiResult;
   try {
     let apiRes = await fetch(timeApiUrl);
-    if (apiRes.status === 404 && matches.length > 0) {
-      tz = matches[0].timezone;
-      timeApiUrl = `https://worldtimeapi.org/api/timezone/${encodeURIComponent(tz)}`;
-      apiRes = await fetch(timeApiUrl);
-    }
     if (apiRes.status !== 200) throw new Error('Not found');
     apiResult = await apiRes.json();
   } catch (e) {
@@ -100,10 +77,9 @@ module.exports = async (req, res) => {
 
   lastCalled = Date.now();
 
-  // Parse UTC datetime and apply UTC offset to get local time
   const baseUtcDate = new Date(apiResult.datetime);
   const localDate = applyUtcOffset(baseUtcDate, apiResult.utc_offset);
-  const utcOffset = apiResult.utc_offset; // e.g., "+01:00"
+  const utcOffset = apiResult.utc_offset;
   const offsetShort = utcOffset.replace(/^([+-]\d{2}):(\d{2})$/, '$1');
   const utcString = `UTC Conversion ${offsetShort}`;
 
