@@ -49,7 +49,7 @@ function loadCities() {
   // Build Fuse instance for fuzzy searching on name fields
   fuse = new Fuse(cities, {
     keys: ['name', 'asciiname', 'alternatenames'],
-    threshold: 0.3, // Lower = stricter, higher = more forgiving (0.3 is a good start)
+    threshold: 0.45, // Lower = stricter, higher = more forgiving (0.3 is a good start)
     minMatchCharLength: 2
   });
   return cities;
