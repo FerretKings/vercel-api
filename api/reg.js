@@ -2,11 +2,15 @@ const Database = require('better-sqlite3');
 const path = require('path');
 
 module.exports = (req, res) => {
-  const reg = (req.query.reg || '').toUpperCase().trim();
-  if (!reg) {
-    res.status(400).send('Please provide a registration number via ?reg=N12345');
+  let inputReg = (req.query.reg || '').toUpperCase().trim();
+  if (!inputReg) {
+    res.status(400).send('Please provide a registration number via ?reg=N2150G');
     return;
   }
+
+  // Remove leading N for DB lookup, always display with N
+  const dbReg = inputReg.startsWith('N') ? inputReg.substring(1) : inputReg;
+  const displayReg = inputReg.startsWith('N') ? inputReg : `N${inputReg}`;
 
   const dbPath = path.join(process.cwd(), 'aircraft_chat.db');
   let db;
@@ -17,15 +21,15 @@ module.exports = (req, res) => {
     return;
   }
 
-  // Lookup aircraft record
+  // Lookup aircraft record (DB stores registration WITHOUT leading N)
   const acft = db.prepare(
     'SELECT * FROM aircraft WHERE n_number = ? COLLATE NOCASE'
-  ).get(reg);
+  ).get(dbReg);
 
   if (!acft) {
     db.close();
     res.setHeader('Content-Type', 'text/plain');
-    res.status(200).send(`No aircraft found for reg: ${reg}`);
+    res.status(200).send(`No aircraft found for reg: ${displayReg}`);
     return;
   }
 
@@ -39,26 +43,30 @@ module.exports = (req, res) => {
   }
 
   // Lookup engine info and decode
-  let engDesc = `${acft.eng_count || 1} x ${acft.eng_mfr_mdl}`;
-  let hp = '';
-  const engref = db.prepare(
-    'SELECT mfr, model, horsepower FROM engine WHERE code = ?'
-  ).get(acft.eng_mfr_mdl);
+  let engDesc = '';
+  let engref = null;
+  if (acft.eng_mfr_mdl) {
+    engref = db.prepare(
+      'SELECT mfr, model, horsepower FROM engine WHERE code = ?'
+    ).get(acft.eng_mfr_mdl);
+  }
   if (engref) {
-    hp = engref.horsepower ? ` (${engref.horsepower}hp)` : '';
+    const hp = engref.horsepower ? ` (${engref.horsepower}hp)` : '';
     engDesc = `${acft.eng_count || 1} x ${engref.mfr} ${engref.model}${hp}`;
+  } else if (acft.eng_mfr_mdl) {
+    engDesc = `${acft.eng_count || 1} x ${acft.eng_mfr_mdl}`;
   }
 
-  // Build the string values
+  // Grab seat count, MTOW, etc. directly from the aircraft table
   const year = acft.year_mfr ? `Mfr Yr: ${acft.year_mfr}` : '';
   const type = acft.aircraft_type || '';
-  const seats = acft.seat_count ? `${acft.seat_count} seat(s)` : '';
-  const mtow = acft.weight ? `MTOW: ${acft.weight}lbs` : '';
-  const cruise = acft.cruise_speed ? `Cruise Speed: ${acft.cruise_speed}kts` : '';
+  const seats = (acft.seat_count !== undefined && acft.seat_count !== null) ? `${acft.seat_count} seat(s)` : '';
+  const mtow = (acft.weight !== undefined && acft.weight !== null) ? `MTOW: ${acft.weight}lbs` : '';
+  const cruise = (acft.cruise_speed !== undefined && acft.cruise_speed !== null) ? `Cruise Speed: ${acft.cruise_speed}kts` : '';
 
   // Assemble the output as vertical pipe-separated string
   const parts = [
-    `Reg: ${reg}`,
+    `Reg: ${displayReg}`,
     acftName,
     engDesc,
     year,
