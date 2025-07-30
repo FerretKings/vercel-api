@@ -8,8 +8,8 @@ module.exports = (req, res) => {
     return;
   }
 
-  // Remove leading N for DB lookup, always display with N
-  const dbReg = inputReg.startsWith('N') ? inputReg.substring(1) : inputReg;
+  // Remove leading 'N' for DB query, but always display with 'N'
+  const dbReg = inputReg.startsWith('N') ? inputReg.slice(1) : inputReg;
   const displayReg = inputReg.startsWith('N') ? inputReg : `N${inputReg}`;
 
   const dbPath = path.join(process.cwd(), 'aircraft_chat.db');
@@ -21,7 +21,7 @@ module.exports = (req, res) => {
     return;
   }
 
-  // Lookup aircraft record (DB stores registration WITHOUT leading N)
+  // Lookup aircraft record
   const acft = db.prepare(
     'SELECT * FROM aircraft WHERE n_number = ? COLLATE NOCASE'
   ).get(dbReg);
@@ -52,17 +52,17 @@ module.exports = (req, res) => {
   }
   if (engref) {
     const hp = engref.horsepower ? ` (${engref.horsepower}hp)` : '';
-    engDesc = `${acft.eng_count || 1} x ${engref.mfr} ${engref.model}${hp}`;
+    engDesc = `${acft.engine_count || 1} x ${engref.mfr} ${engref.model}${hp}`;
   } else if (acft.eng_mfr_mdl) {
-    engDesc = `${acft.eng_count || 1} x ${acft.eng_mfr_mdl}`;
+    engDesc = `${acft.engine_count || 1} x ${acft.eng_mfr_mdl}`;
   }
 
-  // Grab seat count, MTOW, etc. directly from the aircraft table
+  // Use correct field names from your schema!
   const year = acft.year_mfr ? `Mfr Yr: ${acft.year_mfr}` : '';
-  const type = acft.aircraft_type || '';
+  const type = acft.type_aircraft || '';
   const seats = (acft.seat_count !== undefined && acft.seat_count !== null) ? `${acft.seat_count} seat(s)` : '';
   const mtow = (acft.weight !== undefined && acft.weight !== null) ? `MTOW: ${acft.weight}lbs` : '';
-  const cruise = (acft.cruise_speed !== undefined && acft.cruise_speed !== null) ? `Cruise Speed: ${acft.cruise_speed}kts` : '';
+  const cruise = (acft.cruising_speed !== undefined && acft.cruising_speed !== null) ? `Cruise Speed: ${acft.cruising_speed}kts` : '';
 
   // Assemble the output as vertical pipe-separated string
   const parts = [
