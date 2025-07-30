@@ -5,6 +5,7 @@
     "@vercel/kv": "^3.0.0",
     "city-timezones": "^1.2.0",
     "node-fetch": "^2.6.7",
-    "fuse.js": "^7.0.0"
+    "fuse.js": "^7.0.0",
+    "better-sqlite3": "^9.0.0"
   }
 }
