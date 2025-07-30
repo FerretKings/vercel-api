@@ -1,4 +1,4 @@
-const https = require('https');
+const fetch = require('node-fetch');
 const fs = require('fs');
 const path = require('path');
 
@@ -11,20 +11,24 @@ if (fs.existsSync(dest)) {
 }
 
 console.log('Downloading aircraft_chat.db from Google Drive...');
-const file = fs.createWriteStream(dest);
 
-https.get(url, response => {
-  if (response.statusCode !== 200) {
-    console.error(`Download failed with status ${response.statusCode}`);
+fetch(url)
+  .then(res => {
+    if (!res.ok) {
+      console.error(`Download failed with status ${res.status}`);
+      process.exit(1);
+    }
+    const fileStream = fs.createWriteStream(dest);
+    res.body.pipe(fileStream);
+    res.body.on('error', err => {
+      console.error('Failed to download DB:', err.message);
+      process.exit(1);
+    });
+    fileStream.on('finish', () => {
+      console.log('Downloaded aircraft_chat.db');
+    });
+  })
+  .catch(err => {
+    console.error('Failed to download DB:', err.message);
     process.exit(1);
-  }
-  response.pipe(file);
-  file.on('finish', () => {
-    file.close();
-    console.log('Downloaded aircraft_chat.db');
   });
-}).on('error', err => {
-  fs.unlink(dest, () => {});
-  console.error('Failed to download DB:', err.message);
-  process.exit(1);
-});
