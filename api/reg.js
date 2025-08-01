@@ -33,42 +33,60 @@ module.exports = (req, res) => {
     return;
   }
 
-  // Lookup decoded aircraft type/model
+  // Lookup decoded aircraft type/model from acftref
   let acftName = acft.mfr_mdl_code;
-  const acftref = db.prepare(
-    'SELECT mfr, model FROM acftref WHERE code = ?'
-  ).get(acft.mfr_mdl_code);
-  if (acftref) {
-    acftName = `${acftref.mfr} ${acftref.model}`;
+  let acftref = null;
+  if (acft.mfr_mdl_code) {
+    acftref = db.prepare(
+      'SELECT mfr, model, no_eng, no_seats, speed FROM acftref WHERE code = ?'
+    ).get(acft.mfr_mdl_code);
+    if (acftref && acftref.mfr && acftref.model) {
+      acftName = `${acftref.mfr.trim()} ${acftref.model.trim()}`;
+    }
   }
 
-  // Engine info (lookup engine table if possible)
+  // Engine count (prefer acftref, fallback to 1)
+  let engine_count = (acftref && acftref.no_eng && Number.isInteger(acftref.no_eng))
+    ? acftref.no_eng
+    : 1;
+
+  // Engine info (lookup engine table if possible and only if acft.eng_mfr_mdl exists)
   let engDesc = '';
-  let engref = null;
   if (acft.eng_mfr_mdl) {
-    engref = db.prepare(
+    const engref = db.prepare(
       'SELECT mfr, model, horsepower FROM engine WHERE code = ?'
     ).get(acft.eng_mfr_mdl);
-  }
-  if (engref) {
-    const hp = engref.horsepower && engref.horsepower !== 'NULL' ? ` (${engref.horsepower}hp)` : '';
-    engDesc = `${acft.engine_count || 1} x ${engref.mfr} ${engref.model}${hp}`;
-  } else if (acft.eng_mfr_mdl) {
-    engDesc = `${acft.engine_count || 1} x ${acft.eng_mfr_mdl}`;
+    if (engref && engref.mfr && engref.model) {
+      const hp = engref.horsepower ? ` (${engref.horsepower}hp)` : '';
+      engDesc = `${engine_count} x ${engref.mfr.trim()} ${engref.model.trim()}${hp}`;
+    } else {
+      engDesc = `${engine_count} x ${acft.eng_mfr_mdl}`;
+    }
   }
 
-  // Year manufactured
-  const year = acft.year_mfr ? `Mfr Yr: ${acft.year_mfr}` : '';
-  // Aircraft type
-  const type = acft.type_aircraft || '';
-  // Seat count
-  const seats = (acft.seat_count !== undefined && acft.seat_count !== null) ? `${acft.seat_count} seat(s)` : '';
-  // MTOW (weight)
-  const mtow = (acft.weight !== undefined && acft.weight !== null) ? `MTOW: ${acft.weight} lbs` : '';
-  // Cruising speed
-  const cruise = (acft.cruising_speed !== undefined && acft.cruising_speed !== null) ? `Cruise Speed: ${acft.cruising_speed}kts` : '';
+  // Year manufactured (skip if missing/invalid)
+  const year = (acft.year_mfr && !isNaN(acft.year_mfr)) ? `Mfr Yr: ${acft.year_mfr}` : '';
 
-  // Assemble the output as vertical pipe-separated string
+  // Aircraft type (skip if missing)
+  const type = acft.type_aircraft ? acft.type_aircraft.trim() : '';
+
+  // Seat count (prefer acftref if available, skip if missing/invalid)
+  let seat_count = (acftref && acftref.no_seats && Number.isInteger(acftref.no_seats))
+    ? acftref.no_seats
+    : null;
+
+  let seats = '';
+  if (seat_count !== null && seat_count !== undefined && seat_count > 0) {
+    seats = `${seat_count} seat${seat_count === 1 ? '' : 's'}`;
+  }
+
+  // Cruise speed (prefer acftref, skip if missing/invalid/zero)
+  let cruise = '';
+  if (acftref && acftref.speed && acftref.speed > 0) {
+    cruise = `Cruise Speed: ${acftref.speed}kts`;
+  }
+
+  // Assemble output: only include non-empty fields, no extra pipes
   const parts = [
     `Reg: ${displayReg}`,
     acftName,
@@ -76,9 +94,8 @@ module.exports = (req, res) => {
     year,
     type,
     seats,
-    mtow,
     cruise,
-  ].filter(Boolean);
+  ].filter(s => s && s.trim());
 
   db.close();
 
