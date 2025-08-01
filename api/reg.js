@@ -1,6 +1,21 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 
+// Type Aircraft code mapping
+const typeAircraftMap = {
+  '1': 'Glider',
+  '2': 'Balloon',
+  '3': 'Blimp/Dirigible',
+  '4': 'Fixed wing single engine',
+  '5': 'Fixed wing multi engine',
+  '6': 'Rotorcraft',
+  '7': 'Weight-shift-control',
+  '8': 'Powered Parachute',
+  '9': 'Gyroplane',
+  'H': 'Hybrid Lift',
+  'O': 'Other'
+};
+
 module.exports = (req, res) => {
   let inputReg = (req.query.reg || '').toUpperCase().trim();
   if (!inputReg) {
@@ -67,8 +82,12 @@ module.exports = (req, res) => {
   // Year manufactured (skip if missing/invalid)
   const year = (acft.year_mfr && !isNaN(acft.year_mfr)) ? `Mfr Yr: ${acft.year_mfr}` : '';
 
-  // Aircraft type (skip if missing)
-  const type = acft.type_aircraft ? acft.type_aircraft.trim() : '';
+  // Aircraft type decode
+  let type = '';
+  if (acft.type_aircraft) {
+    const code = acft.type_aircraft.toString().trim();
+    type = typeAircraftMap[code] || code;
+  }
 
   // Seat count (prefer acftref if available, skip if missing/invalid)
   let seat_count = (acftref && acftref.no_seats && Number.isInteger(acftref.no_seats))
