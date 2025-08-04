@@ -16,7 +16,6 @@ export default async function handler(req, res) {
     const astroResp = await fetch(astroUrl);
     const astroData = await astroResp.json();
 
-    // Error handling if the API returns an error or missing fields
     if (
       !astroData ||
       !astroData.sunrise ||
@@ -28,19 +27,27 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Build location string from city, state_prov, and country_name
+    // Build location string using city, state_prov, country_name as available
     let location = "";
     if (typeof astroData.location === 'object') {
-      if (astroData.location.city) location += astroData.location.city;
-      if (astroData.location.state_prov) location += (location ? ', ' : '') + astroData.location.state_prov;
-      if (astroData.location.country_name) location += (location ? ', ' : '') + astroData.location.country_name;
+      if (astroData.location.city) {
+        location += astroData.location.city;
+        if (astroData.location.state_prov) {
+          location += `, ${astroData.location.state_prov}`;
+        } else if (astroData.location.country_name) {
+          location += `, ${astroData.location.country_name}`;
+        }
+      } else if (astroData.location.state_prov) {
+        location += astroData.location.state_prov;
+      } else if (astroData.location.country_name) {
+        location += astroData.location.country_name;
+      }
     } else if (typeof astroData.location === 'string') {
       location = astroData.location;
     }
-
     if (!location) location = 'Location';
 
-    // Format sunrise, sunset, and current_time as HH:MM (drop seconds/fractions)
+    // Format sunrise, sunset, and current_time as HH:MM
     const sunrise = astroData.sunrise.slice(0, 5);
     const sunset = astroData.sunset.slice(0, 5);
     const currentTime = astroData.current_time.slice(0, 5);
