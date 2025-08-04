@@ -1,6 +1,3 @@
-// /api/sunrise.js
-// Vercel serverless function for returning sunrise/sunset times and local time for a location via ipgeolocation.io Astronomy API
-
 export default async function handler(req, res) {
   const query = (req.query.q || '').trim();
   const apiKey = process.env.API_IPGEOLOC;
@@ -11,7 +8,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Use Astronomy API with location parameter
     const astroUrl = `https://api.ipgeolocation.io/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(query)}`;
     const astroResp = await fetch(astroUrl);
     const astroData = await astroResp.json();
@@ -20,34 +16,32 @@ export default async function handler(req, res) {
       !astroData ||
       !astroData.sunrise ||
       !astroData.sunset ||
-      !astroData.current_time ||
-      !astroData.location
+      !astroData.current_time
     ) {
       res.status(404).send('Could not find location or retrieve sunrise/sunset times. Please check your input.');
       return;
     }
 
-    // Build location string using city, state_prov, country_name as available
+    // Use top-level fields from the Astronomy API response
     let location = "";
-    if (typeof astroData.location === 'object') {
-      if (astroData.location.city) {
-        location += astroData.location.city;
-        if (astroData.location.state_prov) {
-          location += `, ${astroData.location.state_prov}`;
-        } else if (astroData.location.country_name) {
-          location += `, ${astroData.location.country_name}`;
-        }
-      } else if (astroData.location.state_prov) {
-        location += astroData.location.state_prov;
-      } else if (astroData.location.country_name) {
-        location += astroData.location.country_name;
+    if (astroData.city) {
+      location += astroData.city;
+      if (astroData.state_prov) {
+        location += `, ${astroData.state_prov}`;
+      } else if (astroData.country_name) {
+        location += `, ${astroData.country_name}`;
       }
-    } else if (typeof astroData.location === 'string') {
-      location = astroData.location;
+    } else if (astroData.state_prov) {
+      location += astroData.state_prov;
+    } else if (astroData.country_name) {
+      location += astroData.country_name;
+    } else if (astroData.location) {
+      // Fallback if location is a string
+      location = typeof astroData.location === 'string' ? astroData.location : 'Location';
+    } else {
+      location = 'Location';
     }
-    if (!location) location = 'Location';
 
-    // Format sunrise, sunset, and current_time as HH:MM
     const sunrise = astroData.sunrise.slice(0, 5);
     const sunset = astroData.sunset.slice(0, 5);
     const currentTime = astroData.current_time.slice(0, 5);
