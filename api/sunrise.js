@@ -8,6 +8,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Use Astronomy API with location parameter
     const astroUrl = `https://api.ipgeolocation.io/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(query)}`;
     const astroResp = await fetch(astroUrl);
     const astroData = await astroResp.json();
@@ -16,32 +17,36 @@ export default async function handler(req, res) {
       !astroData ||
       !astroData.sunrise ||
       !astroData.sunset ||
-      !astroData.current_time
+      !astroData.current_time ||
+      !astroData.location
     ) {
       res.status(404).send('Could not find location or retrieve sunrise/sunset times. Please check your input.');
       return;
     }
 
-    // Use top-level fields from the Astronomy API response
+    // Flexible location logic
     let location = "";
-    if (astroData.city) {
-      location += astroData.city;
-      if (astroData.state_prov) {
-        location += `, ${astroData.state_prov}`;
-      } else if (astroData.country_name) {
-        location += `, ${astroData.country_name}`;
+    const loc = astroData.location;
+    // Handles both object and string
+    if (typeof loc === 'object' && loc !== null) {
+      if (loc.city && loc.state_prov) {
+        location = `${loc.city}, ${loc.state_prov}`;
+      } else if (loc.city && loc.country_name) {
+        location = `${loc.city}, ${loc.country_name}`;
+      } else if (loc.city) {
+        location = loc.city;
+      } else if (loc.state_prov) {
+        location = loc.state_prov;
+      } else if (loc.country_name) {
+        location = loc.country_name;
       }
-    } else if (astroData.state_prov) {
-      location += astroData.state_prov;
-    } else if (astroData.country_name) {
-      location += astroData.country_name;
-    } else if (astroData.location) {
-      // Fallback if location is a string
-      location = typeof astroData.location === 'string' ? astroData.location : 'Location';
-    } else {
-      location = 'Location';
+    } else if (typeof loc === 'string') {
+      location = loc;
     }
 
+    if (!location) location = 'Unknown Location';
+
+    // Format sunrise, sunset, and current_time as HH:MM
     const sunrise = astroData.sunrise.slice(0, 5);
     const sunset = astroData.sunset.slice(0, 5);
     const currentTime = astroData.current_time.slice(0, 5);
