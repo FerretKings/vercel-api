@@ -7,13 +7,21 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Title-case each part of the input (works for city, state, country)
+  function titleCaseLocation(str) {
+    return str.split(',')
+      .map(part => part.trim().replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()))
+      .join(',');
+  }
+
+  const formattedQuery = titleCaseLocation(query);
+
   try {
     // Use Astronomy API with location parameter
-    const astroUrl = `https://api.ipgeolocation.io/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(query)}`;
+    const astroUrl = `https://api.ipgeolocation.io/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(formattedQuery)}`;
     const astroResp = await fetch(astroUrl);
     const astroData = await astroResp.json();
 
-    // Validate structure
     if (
       !astroData ||
       !astroData.location ||
@@ -27,10 +35,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Use location_string directly
     const location = astroData.location.location_string;
-
-    // Format sunrise, sunset, and current_time as HH:MM
     const sunrise = astroData.astronomy.sunrise.slice(0, 5);
     const sunset = astroData.astronomy.sunset.slice(0, 5);
     const currentTime = astroData.astronomy.current_time.slice(0, 5);
