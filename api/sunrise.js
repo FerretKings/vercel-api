@@ -7,41 +7,41 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Title-case each part of the input (works for city, state, country)
-  function titleCaseLocation(str) {
+  // Smartly format location parts: city/country title case, 2-letter state/province upper
+  function formatLocation(str) {
     return str.split(',')
-      .map(part => part.trim().replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()))
-      .join(',');
+      .map((part, idx) => {
+        const trimmed = part.trim();
+        // If 2-letter and not first part, likely a state/province abbreviation
+        if (/^[a-zA-Z]{2}$/.test(trimmed) && idx > 0) {
+          return trimmed.toUpperCase();
+        }
+        // Otherwise, title case
+        return trimmed.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+      })
+      .join(', ');
   }
 
-  const formattedQuery = titleCaseLocation(query);
+  const formattedQuery = formatLocation(query);
 
   try {
-    // Use Astronomy API with location parameter
     const astroUrl = `https://api.ipgeolocation.io/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(formattedQuery)}`;
     const astroResp = await fetch(astroUrl);
     const astroData = await astroResp.json();
 
-    if (
-      !astroData ||
-      !astroData.location ||
-      !astroData.location.location_string ||
-      !astroData.astronomy ||
-      !astroData.astronomy.sunrise ||
-      !astroData.astronomy.sunset ||
-      !astroData.astronomy.current_time
-    ) {
+    // Defensive: Check for both new and fallback fields
+    const locationStr = astroData?.location?.location_string || astroData?.location || "";
+    const sunrise = astroData?.astronomy?.sunrise;
+    const sunset = astroData?.astronomy?.sunset;
+    const currentTime = astroData?.astronomy?.current_time;
+
+    if (!locationStr || !sunrise || !sunset || !currentTime) {
       res.status(404).send('Could not find location or retrieve sunrise/sunset times. Please check your input.');
       return;
     }
 
-    const location = astroData.location.location_string;
-    const sunrise = astroData.astronomy.sunrise.slice(0, 5);
-    const sunset = astroData.astronomy.sunset.slice(0, 5);
-    const currentTime = astroData.astronomy.current_time.slice(0, 5);
-
     res.setHeader('Content-Type', 'text/plain');
-    res.status(200).send(`${location} Sunrise: ${sunrise} / Sunset: ${sunset} | Local Time: ${currentTime}`);
+    res.status(200).send(`${locationStr} Sunrise: ${sunrise.slice(0,5)} / Sunset: ${sunset.slice(0,5)} | Local Time: ${currentTime.slice(0,5)}`);
   } catch (e) {
     res.status(500).send('Could not find location or retrieve sunrise/sunset times. Please check your input.');
   }
