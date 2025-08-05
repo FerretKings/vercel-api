@@ -7,41 +7,47 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Smartly format location parts: city/country title case, 2-letter state/province upper
-  function formatLocation(str) {
-    return str.split(',')
-      .map((part, idx) => {
-        const trimmed = part.trim();
-        // If 2-letter and not first part, likely a state/province abbreviation
-        if (/^[a-zA-Z]{2}$/.test(trimmed) && idx > 0) {
-          return trimmed.toUpperCase();
-        }
-        // Otherwise, title case
-        return trimmed.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-      })
-      .join(', ');
-  }
-
-  const formattedQuery = formatLocation(query);
-
   try {
-    const astroUrl = `https://api.ipgeolocation.io/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(formattedQuery)}`;
+    // Directly use user input as "location"
+    const astroUrl = `https://api.ipgeolocation.io/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(query)}`;
     const astroResp = await fetch(astroUrl);
     const astroData = await astroResp.json();
 
-    // Defensive: Check for both new and fallback fields
-    const locationStr = astroData?.location?.location_string || astroData?.location || "";
-    const sunrise = astroData?.astronomy?.sunrise;
-    const sunset = astroData?.astronomy?.sunset;
-    const currentTime = astroData?.astronomy?.current_time;
+    const loc = astroData?.location;
+    const astronomy = astroData?.astronomy;
 
-    if (!locationStr || !sunrise || !sunset || !currentTime) {
+    // Defensive: Check required fields
+    if (!loc || !astronomy || !astronomy.sunrise || !astronomy.sunset || !astronomy.current_time) {
       res.status(404).send('Could not find location or retrieve sunrise/sunset times. Please check your input.');
       return;
     }
 
+    // Build location label: City, State (if available), Country (if no state)
+    let locationLabel = '';
+    if (loc.city) {
+      locationLabel += loc.city;
+      if (loc.state_prov) {
+        locationLabel += `, ${loc.state_prov}`;
+      } else if (loc.country_name) {
+        locationLabel += `, ${loc.country_name}`;
+      }
+    } else if (loc.state_prov) {
+      locationLabel += loc.state_prov;
+    } else if (loc.country_name) {
+      locationLabel += loc.country_name;
+    } else if (loc.location_string) {
+      locationLabel += loc.location_string;
+    } else {
+      locationLabel = 'Location';
+    }
+
+    // Format times
+    const sunrise = astronomy.sunrise.slice(0, 5);
+    const sunset = astronomy.sunset.slice(0, 5);
+    const currentTime = astronomy.current_time.slice(0, 5);
+
     res.setHeader('Content-Type', 'text/plain');
-    res.status(200).send(`${locationStr} Sunrise: ${sunrise.slice(0,5)} / Sunset: ${sunset.slice(0,5)} | Local Time: ${currentTime.slice(0,5)}`);
+    res.status(200).send(`${locationLabel} Sunrise: ${sunrise} / Sunset: ${sunset} | Local Time: ${currentTime}`);
   } catch (e) {
     res.status(500).send('Could not find location or retrieve sunrise/sunset times. Please check your input.');
   }
