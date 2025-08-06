@@ -1,14 +1,31 @@
 export default async function handler(req, res) {
-  const query = (req.query.q || '').trim();
-  const userDate = (req.query.date || '').trim(); // Accept user date in many formats
+  // Get user input (e.g. "Dallas 8/6/25", "Bakersfield", "Dallas, TX 12/25/25")
+  const input = (req.query.q || '').trim();
   const apiKey = process.env.API_IPGEOLOC;
 
-  if (!apiKey || !query) {
+  if (!apiKey || !input) {
     res.status(400).send('Could not find location or retrieve sunrise/sunset times. Please check your input.');
     return;
   }
 
-  // Helper to convert mm/dd/yyyy, m/d/yy, etc. to yyyy-mm-dd
+  // --- 1. Parse input into city and date ---
+  function parseUserInput(input) {
+    // Flexible: date at end, separated by space, e.g. Dallas 8/6/25
+    // Accepts formats like m/d/yy, mm/dd/yyyy, m-d-yy, mm.dd.yyyy, etc.
+    const datePattern = /(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.](\d{2}|\d{4}))$/;
+    const match = input.match(datePattern);
+    let city, date;
+    if (match) {
+      date = match[1];
+      city = input.replace(datePattern, '').trim().replace(/[\s,]+$/, '');
+    } else {
+      city = input.trim();
+      date = null;
+    }
+    return { city, date };
+  }
+
+  // --- 2. Parse date string (mm/dd/yyyy, mm/dd/yy, etc.) to yyyy-mm-dd ---
   function parseUSDate(input) {
     if (!input) return null;
     // Acceptable: mm/dd/yyyy or m/d/yyyy or mm/dd/yy or m/d/yy (with or without leading zeroes)
@@ -31,51 +48,79 @@ export default async function handler(req, res) {
     return `${y}-${mm}-${dd}`;
   }
 
-  // If no date supplied, use today in yyyy-mm-dd
-  function todayYMD() {
+  // --- 3. Get today's date in specified timezone (returns yyyy-mm-dd) ---
+  function todayYMDInTimezone(tz) {
     const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth() + 1;
-    const d = now.getDate();
-    const mm = m < 10 ? `0${m}` : `${m}`;
-    const dd = d < 10 ? `0${d}` : `${d}`;
-    return `${y}-${mm}-${dd}`;
+    // Format: MM/DD/YYYY, HH:MM:SS AM/PM
+    const localStr = now.toLocaleString('en-US', { timeZone: tz });
+    const [mdy] = localStr.split(','); // MM/DD/YYYY
+    const [month, day, year] = mdy.split('/').map(Number);
+    const mm = month < 10 ? `0${month}` : `${month}`;
+    const dd = day < 10 ? `0${day}` : `${day}`;
+    return `${year}-${mm}-${dd}`;
   }
 
-  let apiDate = '';
-  if (userDate) {
-    apiDate = parseUSDate(userDate);
-    if (!apiDate) {
-      res.status(400).send('Invalid date format. Please use mm/dd/yyyy, m/d/yy, etc.');
-      return;
-    }
-  } else {
-    apiDate = todayYMD();
+  // --- 4. Main logic ---
+  const { city, date: userDate } = parseUserInput(input);
+
+  if (!city) {
+    res.status(400).send('Please provide a city name.');
+    return;
   }
 
   try {
-    let astroUrl = `https://api.ipgeolocation.io/v2/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(query)}`;
-    if (apiDate) {
-      astroUrl += `&date=${encodeURIComponent(apiDate)}`;
-    }
+    // First, lookup city location (using the Astronomy API's location resolver)
+    // We need the timezone to get today's date in that city if no date provided.
+    // We'll call the API once with no date to get the location info.
+    let locationAstroUrl = `https://api.ipgeolocation.io/v2/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(city)}`;
+    const locationAstroResp = await fetch(locationAstroUrl);
+    const locationAstroData = await locationAstroResp.json();
 
-    const astroResp = await fetch(astroUrl);
-    const astroData = await astroResp.json();
-
-    const loc = astroData?.location;
-    const astronomy = astroData?.astronomy;
+    const loc = locationAstroData?.location;
+    const astronomy = locationAstroData?.astronomy;
 
     if (
       !loc ||
+      !loc.timezone ||
       loc.latitude === undefined ||
-      loc.longitude === undefined ||
-      !astronomy ||
-      !astronomy.sunrise ||
-      !astronomy.sunset ||
-      !astronomy.current_time ||
-      !astronomy.date
+      loc.longitude === undefined
     ) {
       res.status(404).send('Could not find location or retrieve sunrise/sunset times. Please check your input.');
+      return;
+    }
+
+    // --- 5. Decide the date to use ---
+    let apiDate = '';
+    if (userDate) {
+      apiDate = parseUSDate(userDate);
+      if (!apiDate) {
+        res.status(400).send('Invalid date format. Please use mm/dd/yyyy, m/d/yy, etc.');
+        return;
+      }
+    } else {
+      apiDate = todayYMDInTimezone(loc.timezone);
+    }
+
+    // If no date, we already have astronomy data for today; otherwise, fetch for desired date:
+    let astroData, astronomyData;
+    if (!userDate) {
+      astroData = locationAstroData;
+      astronomyData = astronomy;
+    } else {
+      let astroUrl = `https://api.ipgeolocation.io/v2/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(city)}&date=${encodeURIComponent(apiDate)}`;
+      const astroResp = await fetch(astroUrl);
+      astroData = await astroResp.json();
+      astronomyData = astroData?.astronomy;
+    }
+
+    if (
+      !astronomyData ||
+      !astronomyData.sunrise ||
+      !astronomyData.sunset ||
+      !astronomyData.current_time ||
+      !astronomyData.date
+    ) {
+      res.status(404).send('Could not find astronomy info for that date and location.');
       return;
     }
 
@@ -86,8 +131,8 @@ export default async function handler(req, res) {
     if (loc.country_name) labelParts.push(loc.country_name);
     const locationLabel = labelParts.length ? labelParts.join(', ') : (loc.location_string || 'Location');
 
-    // Format the date as "Tuesday, 8/5/2025"
-    const dateStr = astronomy.date; // format: "2025-08-05"
+    // Format the date as "DayOfWeek, m/d/yyyy"
+    const dateStr = astronomyData.date; // format: "2025-08-06"
     const [year, month, day] = dateStr.split('-').map(Number);
     const dateObj = new Date(year, month - 1, day);
     const daysOfWeek = [
@@ -97,9 +142,9 @@ export default async function handler(req, res) {
     const formattedDate = `${dayOfWeek}, ${month}/${day}/${year}`;
 
     // Format times
-    const sunrise = astronomy.sunrise.slice(0, 5);
-    const sunset = astronomy.sunset.slice(0, 5);
-    const currentTime = astronomy.current_time.slice(0, 5);
+    const sunrise = astronomyData.sunrise.slice(0, 5);
+    const sunset = astronomyData.sunset.slice(0, 5);
+    const currentTime = astronomyData.current_time.slice(0, 5);
 
     res.setHeader('Content-Type', 'text/plain');
     res.status(200).send(
