@@ -5,8 +5,8 @@
   "sunrise": "Get the sunrise time for a specified location. Ex: !sunrise New York. Aliases: !ss, !sr, !sunset",
   "ctof": "Provide a temperature in Celsius and receive the corresponding Farenheit temperature. Accepts decimals. Ex: !ctof 20.2",
   "ftoc": "Provide a temperature in Farenheit and receive the corresponding Celsius temperature. Accepts decimals. Ex: !ftoc 98.6",
-  "metar": "Provide a 4-letter ICAO Airport Identifier and receive the official aviation weather report. Ex: !metar KJFK",
-  "taf": "Provide a 4-letter ICAO Airport Identifier and receive the official aviation weather forecast. Ex: !taf KDFW",
+  "metar": "Provide a 4-letter ICAO Airport Identifier and receive the official aviation weather report. Ex: !metar KJFK. How the heck do you read these? https://tinyurl.com/ferretwxdecode",
+  "taf": "Provide a 4-letter ICAO Airport Identifier and receive the official aviation weather forecast. Ex: !taf KDFW. How the heck do you read these? https://tinyurl.com/ferretwxdecode",
   "zulu": "Returns the Coordinated Universal Time (UTC)",
   "weather": "Provide a city to receive the current weather. Refine with US State or Country if desired. Ex: !weather Springfield, MO"
 }
