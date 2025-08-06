@@ -6,9 +6,13 @@ export default async function handler(req, res) {
     res.status(500).send('Server error: API key is missing.');
     return;
   }
+
+  // Show usage instructions if no input
   if (!input) {
     res.status(200).send(
-      "Sunrise/Sunset - Provide City (required), State or Country (optional), and Date (optional).\nReturns Location, Date, Sunrise/Sunset times, and current local time!\n\nExamples:\n- Dallas\n- Paris, France\n- Dallas TX 8/12/25\n- Tokyo 7/4/25"
+      "Sunrise/Sunset — Usage: Provide City (required), State or Country (optional), and Date (optional).\n" +
+      "Returns Location, Date, Sunrise/Sunset times, and current local time!\n" +
+      "Examples: !sr Dallas | !sr Paris, France | !sr Dallas TX 8/12/25 | !sr Tokyo 7/4/25"
     );
     return;
   }
