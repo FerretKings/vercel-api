@@ -76,15 +76,16 @@ export default async function handler(req, res) {
     const locationAstroResp = await fetch(locationAstroUrl);
     const locationAstroData = await locationAstroResp.json();
 
+    // --- Error logging for debugging ---
+    console.log('Location API URL:', locationAstroUrl);
+    console.log('Location API response:', JSON.stringify(locationAstroData));
+
     const loc = locationAstroData?.location;
     const astronomy = locationAstroData?.astronomy;
 
-    if (
-      !loc ||
-      !loc.timezone ||
-      loc.latitude === undefined ||
-      loc.longitude === undefined
-    ) {
+    // Relaxed: only require loc and loc.timezone minimally
+    if (!loc || !loc.timezone) {
+      console.error('Missing location or timezone. Raw location object:', JSON.stringify(loc));
       res.status(404).send('Could not find location or retrieve sunrise/sunset times. Please check your input.');
       return;
     }
@@ -94,6 +95,7 @@ export default async function handler(req, res) {
     if (userDate) {
       apiDate = parseUSDate(userDate);
       if (!apiDate) {
+        console.error('Invalid date format received:', userDate);
         res.status(400).send('Invalid date format. Please use mm/dd/yyyy, m/d/yy, etc.');
         return;
       }
@@ -110,6 +112,11 @@ export default async function handler(req, res) {
       let astroUrl = `https://api.ipgeolocation.io/v2/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(city)}&date=${encodeURIComponent(apiDate)}`;
       const astroResp = await fetch(astroUrl);
       astroData = await astroResp.json();
+
+      // --- Error logging for debugging ---
+      console.log('Astronomy API URL:', astroUrl);
+      console.log('Astronomy API response:', JSON.stringify(astroData));
+
       astronomyData = astroData?.astronomy;
     }
 
@@ -120,6 +127,7 @@ export default async function handler(req, res) {
       !astronomyData.current_time ||
       !astronomyData.date
     ) {
+      console.error('Missing astronomy data or fields. Raw astronomy object:', JSON.stringify(astronomyData));
       res.status(404).send('Could not find astronomy info for that date and location.');
       return;
     }
@@ -151,6 +159,7 @@ export default async function handler(req, res) {
       `${locationLabel} | ${formattedDate} | Sunrise: ${sunrise} / Sunset: ${sunset} | Local Time: ${currentTime}`
     );
   } catch (e) {
+    console.error('Unexpected error in /api/sunrise.js:', e);
     res.status(500).send('Could not find location or retrieve sunrise/sunset times. Please check your input.');
   }
 }
