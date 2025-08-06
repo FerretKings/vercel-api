@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // Get user input (e.g. "Dallas 8/6/25", "Bakersfield", "Dallas, TX 12/25/25")
   const input = (req.query.q || '').trim();
   const apiKey = process.env.API_IPGEOLOC;
 
@@ -8,10 +7,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  // --- 1. Parse input into city and date ---
   function parseUserInput(input) {
-    // Flexible: date at end, separated by space, e.g. Dallas 8/6/25
-    // Accepts formats like m/d/yy, mm/dd/yyyy, m-d-yy, mm.dd.yyyy, etc.
     const datePattern = /(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.](\d{2}|\d{4}))$/;
     const match = input.match(datePattern);
     let city, date;
@@ -25,11 +21,8 @@ export default async function handler(req, res) {
     return { city, date };
   }
 
-  // --- 2. Parse date string (mm/dd/yyyy, mm/dd/yy, etc.) to yyyy-mm-dd ---
   function parseUSDate(input) {
     if (!input) return null;
-    // Acceptable: mm/dd/yyyy or m/d/yyyy or mm/dd/yy or m/d/yy (with or without leading zeroes)
-    // Optional: allow separators /, -, or .
     const regex = /^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2}|\d{4})$/;
     const match = input.match(regex);
     if (!match) return null;
@@ -37,30 +30,13 @@ export default async function handler(req, res) {
     m = parseInt(m, 10);
     d = parseInt(d, 10);
     y = parseInt(y, 10);
-    if (y < 100) { // Two digit year, assume 2000-2099
-      y += (y < 50 ? 2000 : 1900);
-    }
-    // Quick validation
+    if (y < 100) { y += (y < 50 ? 2000 : 1900); }
     if (m < 1 || m > 12 || d < 1 || d > 31) return null;
-    // Pad month and day to 2 digits for API
     const mm = m < 10 ? `0${m}` : `${m}`;
     const dd = d < 10 ? `0${d}` : `${d}`;
     return `${y}-${mm}-${dd}`;
   }
 
-  // --- 3. Get today's date in specified timezone (returns yyyy-mm-dd) ---
-  function todayYMDInTimezone(tz) {
-    const now = new Date();
-    // Format: MM/DD/YYYY, HH:MM:SS AM/PM
-    const localStr = now.toLocaleString('en-US', { timeZone: tz });
-    const [mdy] = localStr.split(','); // MM/DD/YYYY
-    const [month, day, year] = mdy.split('/').map(Number);
-    const mm = month < 10 ? `0${month}` : `${month}`;
-    const dd = day < 10 ? `0${day}` : `${day}`;
-    return `${year}-${mm}-${dd}`;
-  }
-
-  // --- 4. Main logic ---
   const { city, date: userDate } = parseUserInput(input);
 
   if (!city) {
@@ -69,28 +45,24 @@ export default async function handler(req, res) {
   }
 
   try {
-    // First, lookup city location (using the Astronomy API's location resolver)
-    // We need the timezone to get today's date in that city if no date provided.
-    // We'll call the API once with no date to get the location info.
+    // Step 1: Always get the location info (and today's astronomy data for that city)
     let locationAstroUrl = `https://api.ipgeolocation.io/v2/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(city)}`;
     const locationAstroResp = await fetch(locationAstroUrl);
     const locationAstroData = await locationAstroResp.json();
 
-    // --- Error logging for debugging ---
     console.log('Location API URL:', locationAstroUrl);
     console.log('Location API response:', JSON.stringify(locationAstroData));
 
     const loc = locationAstroData?.location;
     const astronomy = locationAstroData?.astronomy;
 
-    // Relaxed: only require loc and loc.timezone minimally
-    if (!loc || !loc.timezone) {
-      console.error('Missing location or timezone. Raw location object:', JSON.stringify(loc));
+    if (!loc) {
+      console.error('Missing location. Raw location object:', JSON.stringify(loc));
       res.status(404).send('Could not find location or retrieve sunrise/sunset times. Please check your input.');
       return;
     }
 
-    // --- 5. Decide the date to use ---
+    // Step 2: Decide the date to use
     let apiDate = '';
     if (userDate) {
       apiDate = parseUSDate(userDate);
@@ -100,24 +72,26 @@ export default async function handler(req, res) {
         return;
       }
     } else {
-      apiDate = todayYMDInTimezone(loc.timezone);
+      // Use the astronomy.date provided, which is "today" in that city
+      apiDate = astronomy?.date;
     }
 
-    // If no date, we already have astronomy data for today; otherwise, fetch for desired date:
-    let astroData, astronomyData;
-    if (!userDate) {
-      astroData = locationAstroData;
+    // Step 3: If user requested today or gave no date, use already-fetched data
+    let astronomyData, usedApiData = false;
+    if (!userDate || (astronomy && astronomy.date === apiDate)) {
       astronomyData = astronomy;
+      usedApiData = true;
     } else {
+      // Otherwise, fetch for the requested date
       let astroUrl = `https://api.ipgeolocation.io/v2/astronomy?apiKey=${apiKey}&location=${encodeURIComponent(city)}&date=${encodeURIComponent(apiDate)}`;
       const astroResp = await fetch(astroUrl);
-      astroData = await astroResp.json();
+      const astroData = await astroResp.json();
 
-      // --- Error logging for debugging ---
       console.log('Astronomy API URL:', astroUrl);
       console.log('Astronomy API response:', JSON.stringify(astroData));
 
       astronomyData = astroData?.astronomy;
+      // Optionally, update loc with new data if needed
     }
 
     if (
