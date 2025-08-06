@@ -2,8 +2,14 @@ export default async function handler(req, res) {
   const input = (req.query.q || '').trim();
   const apiKey = process.env.API_IPGEOLOC;
 
-  if (!apiKey || !input) {
-    res.status(400).send('Could not find location or retrieve sunrise/sunset times. Please check your input.');
+  if (!apiKey) {
+    res.status(500).send('Server error: API key is missing.');
+    return;
+  }
+  if (!input) {
+    res.status(200).send(
+      "Sunrise/Sunset - Provide City (required), State or Country (optional), and Date (optional).\nReturns Location, Date, Sunrise/Sunset times, and current local time!\n\nExamples:\n- Dallas\n- Paris, France\n- Dallas TX 8/12/25\n- Tokyo 7/4/25"
+    );
     return;
   }
 
@@ -91,7 +97,6 @@ export default async function handler(req, res) {
       console.log('Astronomy API response:', JSON.stringify(astroData));
 
       astronomyData = astroData?.astronomy;
-      // Optionally, update loc with new data if needed
     }
 
     if (
