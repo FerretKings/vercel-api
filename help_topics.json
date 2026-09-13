@@ -9,5 +9,6 @@
   "taf": "Provide a 4-letter ICAO Airport Identifier and receive the official aviation weather forecast. Ex: !taf KDFW. How the heck do you read these? https://tinyurl.com/ferretwxdecode",
   "zulu": "Returns the Coordinated Universal Time (UTC)",
   "weather": "Provide a city to receive the current weather. Refine with US State or Country if desired. Ex: !weather Springfield, MO",
-  "knots": "Provide any positive whole number to convert Nautical Miles Per Hour (knots) to Statute Miles Per Hour (mph) / Kilometers Per Hour (kph). Ex !knots 120. Aliases: !kts"
+  "knots": "Provide any positive whole number to convert Nautical Miles Per Hour (knots) to Statute Miles Per Hour (mph) / Kilometers Per Hour (kph). Ex !knots 120. Aliases: !kts",
+  "nautical": "Provide any positive whole number to convert Nautical Miles to Statute Miles (aka Yank Miles) / Kilometers. Ex !nautical 120. Aliases: !nm, !miles, !naut."
 }
